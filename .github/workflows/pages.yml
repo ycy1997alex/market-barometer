@@ -1,0 +1,56 @@
+# GitHub Pages 部署（ToDo §1 第 4 條、§9 Day 27 第 4 項）
+#
+# **這個工作流程不抓資料、不寫資料，只做部署。**
+#
+# 理由不是懶：兩個排程器都寫資料就會衝突，寫入者必須單邊。本機是唯一的
+# 寫入者，Actions 只是 renderer。連帶的好處是 CI 不需要任何金鑰 ——
+# 沒有 FRED key、沒有 Shioaji 憑證、沒有發布密碼。
+#
+# 所以底下**一個 `secrets.` 都不會出現**，而且有一支測試在守這件事
+# （tests/test_workflows.py）。
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # docs/ 只該有密文與 .nojekyll。有資料檔就讓部署失敗 ——
+      # 原始價格序列不進任何 repo，連加密的也不放（§1 第 7 條、§12 第 4 條）。
+      - name: docs/ 不得含資料檔
+        run: |
+          found=$(find docs -type f \( -name '*.csv' -o -name '*.db' \
+                  -o -name '*.json' -o -name '*.sqlite' \) -print)
+          if [ -n "$found" ]; then
+            echo "docs/ 底下出現資料檔，中止部署："
+            echo "$found"
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4

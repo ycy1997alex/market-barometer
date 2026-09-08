@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ToDo §5.4 第 4 條 -->
+<meta name="robots" content="noindex, nofollow">
+<title>__TITLE__</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#262b36;
+    --fg:#e6e8ee; --muted:#8b93a7; --accent:#5b8def; --bad:#e05c5c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;}
+  .gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:420px;background:var(--panel);
+        border:1px solid var(--line);border-radius:12px;padding:28px}
+  h1{font-size:19px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 20px;line-height:1.6}
+  label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px}
+  input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+        background:#0c0e13;color:var(--fg);font-size:15px}
+  input:focus{outline:none;border-color:var(--accent)}
+  button{width:100%;margin-top:20px;padding:11px;border:0;border-radius:8px;
+         background:var(--accent);color:#fff;font-size:15px;cursor:pointer}
+  button:disabled{opacity:.55;cursor:progress}
+  .err{color:var(--bad);font-size:13px;min-height:19px;margin-top:12px}
+  .fine{color:var(--muted);font-size:11.5px;line-height:1.7;margin-top:22px;
+        border-top:1px solid var(--line);padding-top:14px}
+  iframe{border:0;width:100%;height:100vh;display:block}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="card">
+    <h1>__TITLE__</h1>
+    <p class="sub">這是一個<strong>加了鎖的公開頁面</strong>，不是私密頁面。<br>
+       解鎖狀態只留在這個分頁，關掉就沒了；最多 24 小時要重新輸入。</p>
+
+    <form id="form" autocomplete="off">
+      <div id="keyRow" class="hidden">
+        <label for="k">Key</label>
+        <input id="k" type="password" autocomplete="off" spellcheck="false">
+      </div>
+      <label for="p">Password</label>
+      <input id="p" type="password" autocomplete="off" spellcheck="false">
+      <button id="go" type="submit">解鎖</button>
+      <div class="err" id="err"></div>
+    </form>
+
+    <p class="fine" id="fine">
+      開新分頁要重新輸入 —— <code>sessionStorage</code> 是 per-tab 的，這是規格不是故障。
+    </p>
+  </div>
+</div>
+
+<iframe id="view" class="hidden" sandbox="allow-scripts" title="內容"></iframe>
+
+<script>
+// ---------------------------------------------------------------------------
+// 解鎖殼（ToDo §5.3）。零外部相依 —— 全部走瀏覽器內建的 WebCrypto。
+//
+// 流程與 Python 那側的 crypto/envelope.py 是同一套：
+//   密碼 → PBKDF2 導出 kek → 逐一試 keys[i].wrapped → 拿到 cek → 解 content。
+//
+// 三件事情刻意這樣做：
+//
+// 1. sessionStorage 存的是 **CEK，不是密碼**。分頁被翻出來也翻不到密碼。
+// 2. 明文塞進 <iframe srcdoc sandbox="allow-scripts">，**不給 allow-same-origin**
+//    —— 內層跑得動 script，但拿不到外層的 sessionStorage。
+// 3. pub_id 每次發布都變，所以隔天的舊 CEK 會自己失效，優雅退回輸入框，
+//    不必寫任何「清快取」的邏輯。
+// ---------------------------------------------------------------------------
+const ENV  = __PAYLOAD__;
+const MODE = "__MODE__";          // "one" = 只有 Password；"two" = Key + Password
+const TELEMETRY = __TELEMETRY__;  // null = 不送（§5.6 是選配）
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STORE_KEY = "unlock:" + ENV.pub_id;
+
+const enc = new TextEncoder();
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64e = a => btoa(String.fromCharCode(...new Uint8Array(a)));
+
+const $ = id => document.getElementById(id);
+
+if (MODE === "two") $("keyRow").classList.remove("hidden");
+if (TELEMETRY) {
+  // §5.6 第 3 點：要在頁面上揭露。這是自己的站，但不寫等於偷記。
+  $("fine").insertAdjacentHTML("beforeend",
+    "<br>解鎖成功時會送出一筆匿名的使用統計（不含密碼、不含 IP）。");
+}
+
+// 材料的組法要跟 Python 那側一字不差 —— 兩層鎖用 NUL 分隔，
+// 沒有它 "ab"+"c" 與 "a"+"bc" 會導出同一把 kek（§5.3 第 4 點）。
+function material(key, password) {
+  if (MODE !== "two") return enc.encode(password);
+  const k = enc.encode(key), p = enc.encode(password);
+  const out = new Uint8Array(k.length + 1 + p.length);
+  out.set(k, 0); out[k.length] = 0; out.set(p, k.length + 1);
+  return out;
+}
+
+async function deriveKek(mat, salt) {
+  const base = await crypto.subtle.importKey("raw", mat, "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: ENV.kdf.iter, hash: "SHA-256" },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+}
+
+async function unwrap(mat) {
+  // 逐一試每個槽位。AES-GCM 是認證加密 —— 錯的密碼是解密失敗，
+  // 不會吐出半段明文，所以這裡不需要任何額外的正確性檢查。
+  for (const k of ENV.keys) {
+    try {
+      const kek = await deriveKek(mat, b64(k.salt));
+      const cek = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: b64(k.iv), additionalData: enc.encode("kek-v1") },
+        kek, b64(k.wrapped)
+      );
+      return { cek: new Uint8Array(cek), slot: k.t };
+    } catch (e) { /* 這一格不是，換下一格 */ }
+  }
+  return null;
+}
+
+async function decryptContent(cekBytes) {
+  const cek = await crypto.subtle.importKey(
+    "raw", cekBytes, { name: "AES-GCM" }, false, ["decrypt"]
+  );
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: b64(ENV.content.iv),
+      additionalData: enc.encode("barometer-v1") },
+    cek, b64(ENV.content.ct)
+  );
+  return new TextDecoder().decode(plain);
+}
+
+function show(html) {
+  $("gate").classList.add("hidden");
+  const view = $("view");
+  view.srcdoc = html;
+  view.classList.remove("hidden");
+}
+
+function remember(cekBytes) {
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify({
+      cek: b64e(cekBytes), unlocked_at: Date.now(), pub_id: ENV.pub_id
+    }));
+  } catch (e) { /* 無痕模式之類的存不了，不影響這次解鎖 */ }
+}
+
+function ping(slot) {
+  // §5.6：遙測掛掉不得影響解鎖 —— 這是硬規定，所以整段都在 catch 裡。
+  if (!TELEMETRY) return;
+  try {
+    fetch(TELEMETRY, {
+      method: "POST", keepalive: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ t: slot, pub_id: ENV.pub_id, ts: Date.now(),
+                             site: "__TITLE__" })
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// --- 先看 sessionStorage：同一個分頁、同一版發布、24 小時內就直接進去 ---
+(async () => {
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(STORE_KEY) || "null"); } catch (e) {}
+  if (saved && saved.pub_id === ENV.pub_id &&
+      Date.now() - saved.unlocked_at < MAX_AGE_MS) {
+    try {
+      show(await decryptContent(b64(saved.cek)));
+      return;  // sessionStorage 命中不送遙測，不然一次訪問會灌好幾筆
+    } catch (e) {
+      try { sessionStorage.removeItem(STORE_KEY); } catch (e2) {}
+    }
+  }
+  $("p").focus();
+})();
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = $("go"), err = $("err");
+  err.textContent = "";
+  btn.disabled = true;
+  btn.textContent = "解鎖中…";
+
+  try {
+    const got = await unwrap(material($("k").value, $("p").value));
+    if (!got) {
+      // 錯的憑證只得到這一句 —— 不說是 Key 錯還是 Password 錯（§5.5）
+      err.textContent = "密碼錯誤";
+      return;
+    }
+    remember(got.cek);
+    ping(got.slot);
+    show(await decryptContent(got.cek));
+  } catch (e) {
+    err.textContent = "解鎖失敗：" + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "解鎖";
+  }
+});
+</script>
+</body>
+</html>

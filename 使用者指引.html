@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>市場氣壓計 使用者指引</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1c1f26; --panel2:#232732; --line:#2f3542;
+    --fg:#e8eaf0; --dim:#9aa3b2; --accent:#5aa9e6; --warn:#e8b04b;
+    --danger:#e06b6b; --ok:#63c68a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:"Microsoft JhengHei","PingFang TC","Segoe UI",sans-serif;
+    line-height:1.85;font-size:16px}
+  .wrap{max-width:860px;margin:0 auto;padding:48px 22px 90px}
+  h1{font-size:29px;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:var(--dim);margin:0 0 8px}
+  .stamp{color:var(--dim);font-size:13px;border-top:1px solid var(--line);
+    padding-top:12px;margin-top:22px}
+  h2{font-size:21px;margin:44px 0 14px;padding-bottom:8px;
+    border-bottom:2px solid var(--accent)}
+  h3{font-size:17px;margin:26px 0 8px;color:var(--accent)}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0;padding-left:24px}
+  li{margin:7px 0}
+  .card{background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:18px 20px;margin:18px 0}
+  .note{background:var(--panel2);border-left:4px solid var(--accent);
+    border-radius:0 8px 8px 0;padding:14px 18px;margin:18px 0}
+  .warn{background:#2a2418;border-left:4px solid var(--warn);
+    border-radius:0 8px 8px 0;padding:14px 18px;margin:18px 0}
+  .danger{background:#2a1a1a;border-left:4px solid var(--danger);
+    border-radius:0 8px 8px 0;padding:14px 18px;margin:18px 0}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;
+    vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  details{background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;margin:12px 0;overflow:hidden}
+  summary{padding:14px 20px;cursor:pointer;font-weight:600;user-select:none}
+  summary:hover{background:var(--panel2)}
+  details[open] summary{border-bottom:1px solid var(--line);
+    background:var(--panel2)}
+  .body{padding:6px 20px 18px}
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps li{counter-increment:s;position:relative;padding-left:44px;
+    margin:16px 0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:2px;
+    width:29px;height:29px;border-radius:50%;background:var(--accent);
+    color:#0f1115;font-weight:700;display:flex;align-items:center;
+    justify-content:center;font-size:15px}
+  .btn{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;padding:2px 9px;font-size:14px;white-space:nowrap}
+  .big{font-size:19px;font-weight:600}
+  .dim{color:var(--dim)}
+  .tag{display:inline-block;background:var(--panel2);border-radius:5px;
+    padding:1px 8px;font-size:13px;color:var(--dim);margin-right:6px}
+  hr{border:0;border-top:1px solid var(--line);margin:40px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>市場氣壓計・使用者指引</h1>
+  <p class="sub">看總體經濟指標與大盤／ETF 評分的桌面工具</p>
+
+  <div class="danger">
+    <p class="big" style="margin-top:0">這個工具不會叫你買什麼，也不會叫你賣什麼。</p>
+    <p style="margin-bottom:0">它只把一批公開數據整理在同一個畫面上。所有的判斷都是使用者自己的。
+    <b>不構成投資建議。</b></p>
+  </div>
+
+  <h2>一、開始使用</h2>
+
+  <ol class="steps">
+    <li>
+      <b>把檔案放到固定的資料夾。</b><br>
+      隨便哪裡都可以，但建議放一個之後不會被清掉的地方，例如「文件」底下自己開一個資料夾。
+      <span class="dim">不要放在下載資料夾 —— 很多人會定期清那裡。</span>
+    </li>
+    <li>
+      <b>連上網路。</b><br>
+      第一次開啟需要上網抓資料。之後即使離線也能開，只是看到的是上一次抓到的內容。
+    </li>
+    <li>
+      <b>連按兩下開啟。</b><br>
+      <b>第一次</b>大約要等 20 秒，之後每次大約 8 到 10 秒 —— 程式要先把自己解開。
+      <b>這段時間完全沒有畫面是正常的，不要重複點</b>（重複點會開出好幾個視窗）。
+    </li>
+    <li>
+      <b>看到四個分頁的視窗，就成功了。</b>
+    </li>
+  </ol>
+
+  <div class="warn">
+    <b>如果 Windows 跳出藍色的「已保護您的電腦」視窗：</b>
+    這是因為這個程式沒有花錢買數位簽章，不是因為它有問題。
+    點視窗裡的<span class="btn">其他資訊</span>，然後點<span class="btn">仍要執行</span>。
+  </div>
+
+  <h2>二、畫面上有什麼</h2>
+
+  <p>視窗上方是一顆按鈕跟一行提示，中間是四個分頁，最底下是一行狀態。</p>
+
+  <table>
+    <tr><th>分頁</th><th>裡面是什麼</th></tr>
+    <tr><td>世界總體經濟</td><td>美國與國際的利率、物價、就業、油價這一類指標</td></tr>
+    <tr><td>台灣總體經濟</td><td>台灣的利率、物價、出口、景氣這一類指標</td></tr>
+    <tr><td>台股大盤與 ETF</td><td>台灣加權指數，以及追蹤它的幾檔 ETF 的評分</td></tr>
+    <tr><td>美股大盤與 ETF</td><td>美國指數與相關 ETF 的評分</td></tr>
+  </table>
+
+  <div class="note">
+    <b>加權指數與個股是兩件事。</b>
+    這個工具看的是<b>整個市場</b>（指數）跟<b>追蹤指數的 ETF</b>，
+    不是任何一家公司的股票。指數漲不代表手上的股票會漲。
+  </div>
+
+  <h3>每一列有五個欄位</h3>
+  <table>
+    <tr><th>欄位</th><th>意思</th></tr>
+    <tr><td>指標／標的</td><td>這一列在講什麼</td></tr>
+    <tr><td>最新值／分數</td><td>目前的數字</td></tr>
+    <tr><td><b>資料日期</b></td><td><b>這個數字本身是哪一天的</b> —— 最重要的一欄，見第三節</td></tr>
+    <tr><td>頻率</td><td>這個數字多久公布一次：每日、每週、每月、每季</td></tr>
+    <tr><td>備註</td><td>異常提醒，或是「為什麼這格算不出來」</td></tr>
+  </table>
+
+  <h2>三、最重要的一件事：資料日期</h2>
+
+  <div class="card">
+    <p style="margin-top:0"><b>畫面上不同的列，日期本來就不一樣，而且不會一樣。</b></p>
+    <p style="margin-bottom:0">股價每天收盤就有，物價一個月才公布一次，有些指標一季才一次。
+    所以同一個畫面上會同時看到昨天的數字跟兩個月前的數字 ——
+    <b>這是正常的，不是程式壞了。</b></p>
+  </div>
+
+  <p>這也是為什麼底下那行狀態寫的是「幾條序列、幾種資料日期」，而不是「最後更新時間」。
+  一個「最後更新時間」會讓人以為畫面上每個數字都是那一刻的，那是假的。</p>
+
+  <div class="warn">
+    <b>要判斷一個數字新不新，看它自己那一列的「資料日期」，不要看抓取時間。</b>
+    抓取時間只代表「程式什麼時候去問的」，不代表「對方給的是幾號的資料」。
+  </div>
+
+  <h2>四、資料多久更新一次</h2>
+
+  <h3>自動</h3>
+  <p>程式每 10 分鐘會檢查一次「有沒有哪條資料該公布了」。
+  <b>只有真的到期才會上網</b>，不是每 10 分鐘都抓一次。
+  上方那行提示會寫現在有幾條到期。</p>
+
+  <h3>手動</h3>
+  <p>按上方的<span class="btn">強制重抓（忽略快取）</span>，會不管有沒有到期，
+  全部重新問一次。抓的時候按鈕會變灰，視窗不會卡住，可以繼續切分頁看。</p>
+
+  <div class="note">
+    平常<b>不需要</b>按這顆。自動的那套已經按各項資料自己的公布時間在算了。
+    真正需要按的時機只有一個：知道某個數字剛剛公布，但畫面還沒變。
+  </div>
+
+  <h2>五、遇到問題</h2>
+
+  <details>
+    <summary>連按兩下沒反應</summary>
+    <div class="body">
+      <p>第一次開啟大約要 20 秒，之後大約 8 到 10 秒，這段時間完全沒有畫面。<b>先等 30 秒。</b></p>
+      <p>如果超過一分鐘還是沒有：檢查是不是已經開了一個，被壓在其他視窗底下 ——
+      看一下工作列。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>某一格是空的，或寫著「資料不足」</summary>
+    <div class="body">
+      <p><b>這是刻意的，不是故障。</b></p>
+      <p>有些評分需要夠長的歷史資料才算得出來。資料不夠的時候，這個工具會直接說
+      「算不出來」，<b>而不是隨便給一個看起來像分數的數字</b>。</p>
+      <p>一個假的分數比一個空格危險得多 —— 空格看得出來要小心，假分數看不出來。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>某個數字看起來很舊</summary>
+    <div class="body">
+      <p>先看那一列的「頻率」欄。如果寫「每月」或「每季」，那它本來就只有那麼新。</p>
+      <p>如果寫「每日」但日期是好幾天前：可能是<b>假日或休市</b>，
+      也可能是資料來源那邊延遲。按一次<span class="btn">強制重抓（忽略快取）</span>看看。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>按了強制重抓，數字沒變</summary>
+    <div class="body">
+      <p>很可能<b>對方真的還沒公布新的</b>。重抓只是重新去問一次，
+      問到的還是同一個數字，畫面自然不會變。</p>
+      <p>看那一列的「資料日期」有沒有變 —— 沒變就是還沒公布。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>抓資料的時候可以關掉嗎</summary>
+    <div class="body">
+      <p>可以。程式會問一次要不要真的關，選「是」它會先把手上的事收乾淨再結束。</p>
+      <p>沒抓完的資料不會壞掉，下次開啟會重抓。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>沒有網路可以用嗎</summary>
+    <div class="body">
+      <p>可以開，會看到上一次抓到的內容，每一列的資料日期會誠實顯示是哪一天的。</p>
+      <p>但<b>第一次</b>使用一定要有網路，否則裡面是空的。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>視窗大小可以調嗎</summary>
+    <div class="body">
+      <p>可以，用滑鼠拖邊框就行。</p>
+      <p>程式第一次開啟時會依螢幕大小自己決定一個尺寸，不會超出畫面。</p>
+    </div>
+  </details>
+
+  <h2>六、這個工具不做什麼</h2>
+
+  <ul>
+    <li><b>不給買賣建議。</b>不會出現「買進」「賣出」「加碼」這類字眼，這是寫死的規則。</li>
+    <li><b>不預測。</b>畫面上全部是已經發生的數據。</li>
+    <li><b>不看個股。</b>只有整體市場的指數與 ETF。</li>
+    <li><b>不能在畫面上修改任何數字。</b>這是唯讀的儀表板。</li>
+    <li><b>不會傳送任何個人資料。</b>它只從公開來源讀資料，不上傳任何東西。</li>
+  </ul>
+
+  <hr>
+
+  <div class="danger">
+    <p style="margin-top:0"><b>免責</b></p>
+    <p>本工具彙整公開市場數據，<b>不構成投資建議</b>，也不保證資料的即時性或正確性。
+    資料來源可能延遲、修正或中斷。</p>
+    <p style="margin-bottom:0">任何投資決策的後果由使用者自行承擔。</p>
+  </div>
+
+  <p class="stamp">
+    <span class="tag">版本 0.1.0</span>
+    <span class="tag">2026-09-08</span><br>
+    適用於 Windows 10 / 11（64 位元）。
+  </p>
+
+</div>
+</body>
+</html>

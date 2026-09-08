@@ -1,0 +1,39 @@
+# --- 紅線：資料與密文以外的東西一律不進版控（ToDo §12） ---
+# 明文 HTML 只寫進 STOCKDATA_ROOT/build/，永遠不進 git
+build/
+*.html.plain
+
+# 原始價格序列不進任何 repo（§1 第 7 條）
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+price_raw/
+price_current/
+runlog/
+
+# 憑證與金鑰（§5.1）
+secrets/
+secrets.json
+publish.json
+config.local.json
+.env
+*.pem
+*.key
+# 作者把 FRED 與 Shioaji 的金鑰放在一個叫 Key 的資料夾裡。
+# 它現在不在這個 repo 底下，這幾行是保險：萬一哪天被複製進來，先擋住。
+Key/
+key/
+*API*Key*.txt
+*api*key*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+dist/
+
+# 打包
+*.spec.bak

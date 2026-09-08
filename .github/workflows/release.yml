@@ -1,0 +1,76 @@
+# tag → 打包 → 發 Release（ToDo §9 Day 27 第 5 項）
+#
+# 驗收：打一個 tag，Actions 產出 exe artifact 並掛上 Release；
+#       **在一台沒裝開發環境的機器上跑得起來。**
+#
+# 這個工作流程同樣**不需要任何金鑰** —— 它只是把原始碼打包成 exe。
+# 唯一用到的 GITHUB_TOKEN 是 Actions 自己發的，不是我保管的祕密。
+#
+# 版本號的來源是 tag 本身（v0.1.0 → 0.1.0），不另外維護一份版本檔 ——
+# 兩個地方各記一次版本號，遲早會有一份先改。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # 相依固定：只裝 base，不裝 [tw]。shioaji 有下單能力，
+      # 沒有理由讓它進到一個要發出去的 exe（§12 第 5 條）。
+      - name: 安裝相依
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pyinstaller==6.11.1
+
+      - name: 收工前該綠的還是要綠
+        run: |
+          pip install pytest
+          python -m pytest -q
+
+      - name: 打包
+        run: pyinstaller --clean --noconfirm packaging/barometer.spec
+
+      # 「build 成功」不等於「跑得起來」—— 至少確認檔案在、而且不是零位元組。
+      # 真正的啟動驗證要在一台沒裝開發環境的機器上做（驗收句的後半段）。
+      - name: 產物存在檢查
+        shell: pwsh
+        run: |
+          $exe = "dist/market-barometer.exe"
+          if (-not (Test-Path $exe)) { throw "沒有產出 $exe" }
+          $size = (Get-Item $exe).Length
+          Write-Host "產出 $exe（$([math]::Round($size/1MB,1)) MB）"
+          if ($size -lt 1MB) { throw "產物太小，八成是空的" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-barometer-windows
+          path: dist/market-barometer.exe
+          retention-days: 30
+
+      - name: 掛上 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/market-barometer.exe
+          generate_release_notes: true
+          body: |
+            本機資料管線的桌面儀表。
+
+            - 這支 exe **只讀本機快取並在按下「更新」時打網路**，不含任何金鑰。
+            - 資料根目錄走環境變數 `STOCKDATA_ROOT`，預設 `D:\Research\_stockdata`。
+              第一次在新機器上跑會是空的，按「更新」抓一次總經資料即可。
+            - 不含 shioaji：台股交叉比對只在本機跑。
