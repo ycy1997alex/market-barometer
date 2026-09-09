@@ -30,7 +30,7 @@ from barometer.render import page  # noqa: E402
 
 SITE = credentials.MARKET_BAROMETER
 TITLE = "market-barometer"
-TAGLINE = "世界與台灣總經、台美大盤與 ETF 的評分儀表 —— 只出分數，不出建議"
+TAGLINE = "世界與台灣總經、台美大盤與 ETF 的評分儀表，只出分數，不出建議"
 
 DOCS = _HERE / "docs"
 

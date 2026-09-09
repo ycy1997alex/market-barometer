@@ -23,7 +23,7 @@ from barometer.storage import csv_audit
 from barometer.storage.sqlite_repo import SqliteRepo
 
 WORLD_INTRO = (
-    "八項進評分。黃金、原油、匯率、比特幣只顯示不評分 —— "
+    "八項進評分。黃金、原油、匯率、比特幣只顯示不評分，"
     "不進評分的就只是名詞解釋，不假裝它有份量。"
 )
 TW_INTRO = (
@@ -32,7 +32,7 @@ TW_INTRO = (
 )
 INDEX_INTRO = (
     "五個技術面維度，分數是「未警示維度的比例」。"
-    "評分是量測，不是指示 —— 這一頁只有分數與分項，沒有任何行動建議。"
+    "評分是量測，不是指示：這一頁只有分數與分項，沒有任何行動建議。"
 )
 
 
