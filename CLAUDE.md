@@ -95,4 +95,12 @@ $env:STOCKDATA_ROOT = "D:\Research\_stockdata"              # 已設在使用者
 
 ## Git
 
-**不要主動 commit / push。** commit 一律由作者發動。工作到了 commit 點就說一句，然後把指令印出來（`/git-commit`）。
+**`docs/` 由排程自動 commit + push；其他一律作者發動。**
+
+`tools/publish_and_push.ps1`（排程任務 `Barometer-Publish`，每天 22:40）跑完 `publish.py` 之後會自己 `git add -- docs` → commit → `git push origin HEAD`，push 進 master 就觸發 Actions 部署 Pages。這是刻意開的例外，撐著它的是三件事：
+
+1. **它動得到的只有 `docs/` 底下那一份密文。** 只 stage `docs/`，不用 `git add -A`、不用 `git add .`、永遠不用 `-f`（`-f` 會繞過 `.gitignore`，而 `secrets/`、`Key/` 正是靠它擋著）。
+2. **進來時 index 不是空的就中止。** 作者手上 staged 的東西，排程不碰、也不替他 reset 掉。
+3. **紅線由 `tests/test_publish_push.py` 守著**，不是靠自律 —— 自動 push 與手動 push 的差別就是沒有人在按 Enter 之前看一眼 diff。
+
+**其他任何檔案的 commit / push 仍然一律由作者發動。** 工作到了 commit 點就說一句，然後把指令印出來（`/git-commit`）—— 印出指令就是交付，執行是作者的事。

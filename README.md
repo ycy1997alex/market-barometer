@@ -179,7 +179,14 @@ python -m barometer.app.main
 
 # 7. 測試（每天收工前要全綠）
 pytest -q
+
+# 8. 排程：把上面這一串變成每天自己跑
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_tasks.ps1
 ```
+
+`register_tasks.ps1` 是整份時刻表的唯一宣告處（六班：09:00 美股、09:05 總經、18:00 台股、18:05 籌碼、22:30 融資融券、22:40 發布），跑一次就在 Windows 工作排程器裡建好，換一台機器也是跑這一支。註冊前會先把現有任務匯出備份，路徑印在畫面上。
+
+最後那一班 `Barometer-Publish` 呼叫的是 `tools/publish_and_push.ps1`：`publish.py` → 有變才 `git add -- docs` → commit → push → Actions 部署 Pages。它只動得到 `docs/` 底下那一份密文，每次都在 `%STOCKDATA_ROOT%\runlog\publish_push.log` 留一行。
 
 > ⚠️ **`conda activate` 在某些 PowerShell 環境會靜默失效。** 如果 shell 沒有被 `conda init` 過（作者這台就是），`conda activate barometer` 會回傳 exit 0 然後什麼都沒做 —— `python` 仍然指向 base，**不會有任何錯誤訊息**，直到後面某個套件找不到才爆出來。
 >

@@ -175,14 +175,20 @@ python tools/score_index.py
 | 時間 | 誰 | 做什麼 |
 |---|---|---|
 | 09:00 | `Barometer-Daily-US` | 抓美股三檔 |
+| 09:05 | `Barometer-Macro` | 抓總經（FRED / 國發會沒有固定公布時刻，跟著美股那班跑） |
 | 18:00 | `Barometer-Daily-TW` | 抓台股三檔（實測 18:00:01 就有當天收盤） |
 | 18:05 | `Barometer-Chips-TW` | 三大法人 T86 + 台指期 + put/call（T86 約 17:30 公布） |
 | 22:30 | `Barometer-Chips-TW-Late` | **只補融資融券**（約 21:30 才公布，18:00 那班不去問它） |
-| 手動 | 人 | `fetch_macro` → `score_index` → `publish` |
+| 22:40 | `Barometer-Publish` | `publish.py` → 有變才 commit + push `docs/` |
 | push 之後 | GitHub Actions | 部署 Pages |
 
-四個排程任務都勾了「錯過時間後盡快啟動」。**2026-09-07 實測過**：09:00 那次
-機器在睡，15:34 醒來後 15:38 自動補跑，`LastResult=0`，run log 留下第 10 筆。
+**發布排在一天的最後**：當天的資料全部落地了才產頁面，所以一天只 push 一次。中間任何一班失敗，最壞的情況是頁面停在昨天，不會出現半天份的頁面。
+
+六個排程任務都勾了「錯過時間後盡快啟動」，而且明寫了「電池上照跑、跑到一半拔電源不停」—— `New-ScheduledTaskSettingsSet` 這兩個預設值都是相反的，不明寫的話任務會在沒插電的時候安靜地不跑。整份時刻表宣告在 `tools/register_tasks.ps1`，換一台機器跑一次就重建得回來。
+
+**2026-09-07 實測過補跑**：09:00 那次機器在睡，15:34 醒來後 15:38 自動補跑，`LastResult=0`，run log 留下第 10 筆。
+
+**注意「有變才 commit」實際的判準。** 閘門比的是明文指紋，而明文裡有一行是「最後抓取時間」（`last_fetch_at()`，來源是 run log 不是 `now()`）。所以只要當天的抓取真的跑過，那一行就變了，頁面也就會發布 —— 即使價格一格都沒動。閘門真正擋掉的是「抓取沒跑」與「同一天重複發布」這兩種情形，不是「收盤價沒變」。
 
 ---
 
@@ -193,6 +199,7 @@ python tools/score_index.py
 | 頁面停在昨天 | `%STOCKDATA_ROOT%\ALERT.md`（有東西就是有失敗），再看 `runlog\<YYYY-MM>.jsonl` |
 | 某一格數字很奇怪 | `tools/full_reconcile.py` 看它是不是被回頭改過 |
 | 發布之後 Pages 沒更新 | 先確認 `docs/index.html` 真的變了 —— **明文沒變就不會動 docs/**，那是設計不是故障 |
+| 自動 push 沒發生 | `%STOCKDATA_ROOT%\runlog\publish_push.log` —— 每次都留一行，`END docs unchanged` 是正常、`ABORT ...` 才是故障。**push 失敗時 commit 已經在本機了**，補一次 `git push` 即可 |
 | 排程沒跑 | `Get-ScheduledTaskInfo -TaskName Barometer-Daily-TW` 看 `LastTaskResult` |
 | 分數突然全部變了 | `adjustment_event` 有沒有新的一列；有的話是重抓過，`score_history` 要重算 |
 | exe 打開沒反應 | 那是 PyInstaller 的錯誤對話框藏在別的視窗後面，不是當掉 |
