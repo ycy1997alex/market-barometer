@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
 
 from barometer import config
 from barometer.datasources import eia_src, fred_src, tw_gov_src, yfinance_src
@@ -173,3 +174,22 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
 
     log.append()
     return log, {"results": results, "verdicts": verdicts, "summary": summary}
+
+
+def main() -> int:
+    """排程任務 `Barometer-Macro`（每天 09:05）的進入點。
+
+    `force=False` 是刻意的：TTL 由每條序列自己的更新頻率決定（§7.3），
+    每小時去問一條每月才出一次的序列，只會把額度花在必定落空的請求上。
+    """
+    log, _ = run()
+    print(f"[{log.started_at:%Y-%m-%d %H:%M}] macro "
+          f"status={log.status} counts={log.counts}")
+    for n in log.notes:
+        print(f"  ! {n}")
+    # partial 不算失敗 —— 單一指標失敗不該讓排程任務標成錯誤
+    return 0 if log.status in ("ok", "partial") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
