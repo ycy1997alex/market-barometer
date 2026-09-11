@@ -35,12 +35,20 @@ def _extract_envelope(sealed_html: str) -> dict:
 
 
 def _git(repo: Path, *args: str) -> str:
+    """跑一次 git，回它的 stdout；拿不到就回空字串。
+
+    `encoding` 一定要釘死 utf-8。`text=True` 自己會用本機語系（這台是 cp950），
+    而 commit 訊息開頭有 emoji —— 解碼錯誤發生在讀取執行緒裡，`.stdout` 會變成
+    `None` 而不是拋例外，下面那個 `except` 接不到，最後死在 `None.strip()`。
+    """
     try:
-        return subprocess.run(
-            ["git", *args], cwd=repo, capture_output=True, text=True, timeout=30
+        out = subprocess.run(
+            ["git", *args], cwd=repo, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
         ).stdout
     except Exception:
         return ""
+    return out or ""
 
 
 def main(argv: list[str]) -> int:
