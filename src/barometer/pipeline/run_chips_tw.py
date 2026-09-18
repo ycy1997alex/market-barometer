@@ -33,12 +33,28 @@ def _weekdays(end: dt.date, days: int = LOOKBACK_DAYS) -> list[dt.date]:
     return out
 
 
+SHIFTS = {
+    "evening": (run_chips.EVENING_PARTS, "chips_tw_evening"),
+    "late": (run_chips.LATE_PARTS, "chips_tw_late"),
+}
+
+
 def main(argv: list[str]) -> int:
     shift = argv[0] if argv else "evening"
-    parts, task = {
-        "evening": (run_chips.EVENING_PARTS, "chips_tw_evening"),
-        "late": (run_chips.LATE_PARTS, "chips_tw_late"),
-    }.get(shift, (run_chips.ALL_PARTS, "chips_tw"))
+    if shift not in SHIFTS:
+        # **不要落到一個「差不多」的預設值。** 這裡原本是
+        # `.get(shift, (ALL_PARTS, "chips_tw"))`，結果 run_daily.ps1 的
+        # PowerShell 陣列被展開成字串、再被 splatting 拆成字元，傳進來的是
+        # 'l'，於是它安靜地跑了十天的 ALL_PARTS —— exit 0、資料照寫、
+        # run log 有紀錄，只是每晚白打六次 TWSE。
+        #
+        # 錯的參數要大聲失敗。安靜地跑一個不同的班，事後跟「跑對了」
+        # 長得一模一樣。
+        raise ValueError(
+            f"不認識的班別 {shift!r}（可用：{'、'.join(SHIFTS)}）—— "
+            "不猜、不用預設值，請檢查 run_daily.ps1 傳了什麼"
+        )
+    parts, task = SHIFTS[shift]
 
     log = run_chips.run(_weekdays(dt.date.today()), task=task, parts=parts)
     print(f"[{log.started_at:%Y-%m-%d %H:%M}] {task} "

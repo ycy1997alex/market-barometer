@@ -13,9 +13,31 @@ from __future__ import annotations
 
 import datetime as dt
 
-from barometer.pipeline import run_chips
+import pytest
+
+from barometer.pipeline import run_chips, run_chips_tw
 
 D = dt.date(2026, 9, 7)
+
+
+@pytest.fixture
+def dispatch(monkeypatch):
+    """跑 main()，回傳它實際選到的 (parts, task) —— 不碰網路。"""
+    seen = {}
+
+    def _fake_run(dates, task, parts):
+        seen["value"] = (parts, task)
+        class _Log:
+            status, counts, notes, started_at = "ok", {}, [], dt.datetime(2026, 9, 18)
+        return _Log()
+
+    monkeypatch.setattr(run_chips_tw.run_chips, "run", _fake_run)
+
+    def _call(argv):
+        run_chips_tw.main(argv)
+        return seen["value"]
+
+    return _call
 
 
 def test_evening_shift_skips_margin():
@@ -71,3 +93,32 @@ def test_merge_does_not_mutate_the_inputs():
     a, b = {"x": 1}, {"y": 2}
     run_chips.merge_payload(a, b)
     assert a == {"x": 1} and b == {"y": 2}
+
+
+# ---------------- 排程真的跑到哪一班（2026-09-18 撞到的坑，ToDo §10）----------------
+
+def test_no_argument_runs_the_evening_shift(dispatch):
+    assert dispatch([]) == (run_chips.EVENING_PARTS, "chips_tw_evening")
+
+
+def test_late_argument_runs_the_late_shift(dispatch):
+    assert dispatch(["late"]) == (run_chips.LATE_PARTS, "chips_tw_late")
+
+
+def test_unknown_shift_is_rejected_loudly(dispatch):
+    """不認識的班別要**報錯**，不能安靜地跑成 ALL_PARTS。
+
+    2026-09-18 實際發生：`run_daily.ps1` 裡 `$moduleArgs = if (...) { @("late") }`
+    被 PowerShell 自動展開成字串 `"late"`，`@moduleArgs` 再把字串拆成字元，
+    Python 收到的是 `['l','a','t','e']`。`shift` 變成 `'l'`，
+    `.get(shift, (ALL_PARTS, "chips_tw"))` 的 default 讓它**安靜地跑了十天的
+    ALL_PARTS** —— exit 0、資料照寫、run log 有紀錄，只是班別不對，
+    每晚白打六次 TWSE。
+
+    `test_shifts_do_not_overlap()` 那條測試整整十天都是綠的，因為它測的是
+    常數之間的關係，不是排程實際跑到哪一班。**常數對、測試綠、跑錯班。**
+
+    ps1 那一側也修了，但治本的是這裡：參數錯就大聲失敗。
+    """
+    with pytest.raises(ValueError, match="l"):
+        dispatch(["l"])

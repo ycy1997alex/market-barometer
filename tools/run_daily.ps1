@@ -30,7 +30,10 @@ $module = switch ($Market) {
     "chips"      { "barometer.pipeline.run_chips_tw" }
     "chips-late" { "barometer.pipeline.run_chips_tw" }
 }
-$moduleArgs = if ($Market -eq "chips-late") { @("late") } else { @() }
+# [string[]] 不能省：PowerShell 的 if 回傳單元素陣列時會自動展開成字串，
+# 接著 @splatting 會把字串拆成一個一個字元 —— 2026-09-18 實測傳進去的是
+# ['l','a','t','e']，於是 chips-late 安靜地跑成了 ALL_PARTS 整整十天。
+[string[]]$moduleArgs = if ($Market -eq "chips-late") { @("late") } else { @() }
 
 # 這個 wrapper 自己的訊息一律用 ASCII —— 排程任務的 stdout 走系統 ACP（950），
 # 中文會變成亂碼。Python 那一側已經設了 PYTHONIOENCODING=utf-8，中文由它印。
