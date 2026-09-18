@@ -24,7 +24,7 @@ sys.path.insert(0, str(_HERE / "src"))
 
 from barometer import config  # noqa: E402
 from barometer.crypto import credentials, envelope, shell  # noqa: E402
-from barometer.pipeline import build_page, publish_gate  # noqa: E402
+from barometer.pipeline import build_page, publish_gate, run_scores  # noqa: E402
 from barometer.pipeline.runlog import RunLog  # noqa: E402
 from barometer.render import page  # noqa: E402
 
@@ -55,6 +55,21 @@ def main(argv: list[str]) -> int:
     rows = sum(len(t.rows) for t in tabs)
     log.set_count("tabs", len(tabs))
     log.set_count("rows", rows)
+
+    # --- 1.2 分數落地（§10，2026-09-18） ---
+    # 頁面上的分數是 build_tabs() 現算的，算完就丟掉 —— score_history 因此停在
+    # 唯一一次手動跑 scores_index 的那天。**分數的歷史補不回來**：price_version
+    # 這個欄位存在，正是因為分割或除權息之後昨天的分數今天算會不一樣。
+    #
+    # 刻意不加第九支排程：那會變成「先算一次存起來，發布時再算一次」，多一份
+    # 會過期的中間狀態。在這裡落地，讀的是同一份 CSV、差幾秒。
+    #
+    # **放在閘門之前。** 閘門管的是「要不要動 docs/」，跟「今天的分數要不要
+    # 留下來」是兩件事 —— 資料沒變而跳過發布的那一天，分數一樣得有紀錄。
+    scores = run_scores.run(list(config.ALL_SYMBOLS), task="scores_index")
+    log.set_count("scored_symbols", scores.counts.get("symbols_ok", 0))
+    print(f"分數  {scores.counts.get('symbols_ok', 0)} 檔寫進 score_history"
+          f"（run_id={scores.run_id}）")
 
     # --- 1.5 閘門：資料沒變就不動 docs/（§1 第 6 條、§9 Day 28 第 3 項） ---
     # 判斷放在封裝**之前** —— 密文每次都不一樣是刻意的（§5.4 第 1 條），
