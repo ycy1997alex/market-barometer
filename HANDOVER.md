@@ -51,7 +51,11 @@
 
 - `price_raw\<YYYY-MM-DD>\<symbol>.csv` —— 當天抓到什麼就存什麼，**append-only**。
   同一天重跑會附加，不覆寫。這是稽核軌跡，是唯一能證明「來源改過歷史」的東西。
-- `price_current\<symbol>.csv` —— 最新完整序列，允許被覆寫，計算用。
+- `price_current\<symbol>.csv` —— 最新完整序列，計算用。**合併寫入，不是整份覆寫**：
+  同一天的以這次抓回來的為準，來源這次沒回、本機已有的日期留著（2026-09-18 起）。
+  yfinance 回 `0050.TW`、`006208.TW` 時固定漏掉前一個交易日，整份覆寫會在這裡挖出
+  一個洞，而 SQLite 那份（upsert 累積）沒有 —— 偏偏 `build_page` 讀的是這一份。
+  整條覆寫只留給 `tools/refetch.py`（`write_current(..., replace=True)`）。
 
 `^TWII` 這種代號會被存成 `IDX_TWII.csv`（`csv_audit._safe_name`）。
 

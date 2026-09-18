@@ -138,7 +138,7 @@ tools/                  ← 一次性腳本與驗收（不進 src/）
 %STOCKDATA_ROOT%\           預設 D:\Research\_stockdata
 ├─ market.db                ← SQLite：價格、總經、評分歷史、快取
 ├─ price_raw\<YYYY-MM-DD>\  ← 當天抓到什麼就存什麼，append-only 稽核軌跡
-├─ price_current\           ← 最新完整序列，允許被覆寫，計算用
+├─ price_current\           ← 最新完整序列，計算用。合併寫入：來源這次沒回的日期留著
 ├─ runlog\<YYYY-MM>.jsonl   ← 每次跑完 append 一筆
 ├─ build\                   ← 明文 HTML 落地處
 └─ secrets\                 ← 憑證（機器綁定加密）
@@ -171,7 +171,8 @@ python tools/crosscheck_tw.py      # 台股 shioaji × yfinance 交叉比對
 
 # 5. 算分數與發布
 python tools/score_index.py        # 逐日回算 + 五日加權
-python tools/publish.py            # 明文 → 加密 → docs/（資料沒變就不動）
+python tools/repair_current.py     # 查 price_current 有沒有缺交易日（加 --apply 才真的補）
+python tools/publish.py            # 明文 → 加密 → docs/（資料沒變就不動；分數順便寫進 score_history）
 python tools/verify_publish.py     # 發布驗收，十項
 
 # 6. 桌面程式

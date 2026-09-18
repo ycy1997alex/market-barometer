@@ -44,7 +44,8 @@ $env:STOCKDATA_ROOT = "D:\Research\_stockdata"              # 已設在使用者
 & $py tools/fetch_macro.py                  # 24 項總經指標
 & $py tools/fetch_chips.py                  # 市場級籌碼面
 & $py tools/score_index.py                  # 逐日回算 + 五日加權
-& $py tools/publish.py                      # 明文 → 加密 → docs/
+& $py tools/repair_current.py               # 查 price_current 有沒有缺交易日（加 --apply 才真的補）
+& $py tools/publish.py                      # 明文 → 加密 → docs/（會順便把分數寫進 score_history）
 & $py tools/verify_publish.py               # 發布驗收，十項
 & $py -m barometer.app.main                 # 桌面程式
 & $py -m PyInstaller --clean --noconfirm packaging/barometer.spec
