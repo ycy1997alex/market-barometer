@@ -17,13 +17,30 @@ from barometer import config
 from barometer.datasources import yfinance_src
 from barometer.datasources.base import COUNTER, FetchError
 from barometer.domain import windows
+from barometer.domain.ports import PriceBar
 from barometer.domain.reconcile import compare_overlap
 from barometer.pipeline.runlog import RunLog
 from barometer.storage import csv_audit
 from barometer.storage.sqlite_repo import SqliteRepo
 
 
-def _flag_missing_sessions(log: RunLog, final_dates: dict[str, list[dt.date]]) -> None:
+def _traded_dates(bars: list[PriceBar]) -> list[dt.date]:
+    """真的有成交的日期。休市日的假列不算。
+
+    台股休市日（颱風假之類）個股仍會掛出一列 `Open=Close`、`volume=0`，
+    指數則整列不存在 —— **沒有交易就沒有指數，那是對的**。拿個股的假列當
+    基準，會把正確的指數判成缺漏（2026-07-10 實際發生過）。
+
+    這種誤報還會賴著不走：那一天留在一年的滾動視窗裡，等於接下來十個月每天
+    報一次。每天都報一句，就沒有人會再讀它 —— 偵測器就是這樣死掉的。
+    """
+    return [
+        b.date for b in bars
+        if not (b.volume_shares == 0 and b.open is not None and b.open == b.close)
+    ]
+
+
+def _flag_missing_sessions(log: RunLog, final_bars: dict[str, list[PriceBar]]) -> None:
     """同一批裡別人有、我沒有的交易日 —— 記一筆，不修。
 
     既有的兩個偵測器都不看這個方向：`stale` 只認「有這一格但值是空的」，
@@ -32,15 +49,18 @@ def _flag_missing_sessions(log: RunLog, final_dates: dict[str, list[dt.date]]) -
 
     **分市場比。** 台股與美股的交易日不對齊（2026-09-07 美國勞動節台股照常），
     `day24_stocks` 那一批 15 檔混著兩個市場，拿整批的聯集去比會全部亮燈。
+
+    **基準只採真的有成交的日期**（見 `_traded_dates`）。
     """
     groups: dict[bool, list[str]] = {}
-    for symbol in final_dates:
+    for symbol in final_bars:
         groups.setdefault(config.is_tw(symbol), []).append(symbol)
 
     for members in groups.values():
-        reference = sorted({d for s in members for d in final_dates[s]})
+        traded = {s: _traded_dates(final_bars[s]) for s in members}
+        reference = sorted({d for s in members for d in traded[s]})
         for symbol in members:
-            missing = windows.missing_sessions(final_dates[symbol], reference)
+            missing = windows.missing_sessions(traded[symbol], reference)
             if not missing:
                 continue
             days = "、".join(d.isoformat() for d in missing)
@@ -63,7 +83,7 @@ def run(
     config.ensure_dirs()
     repo = SqliteRepo(config.db_path())
     repo.init_schema()
-    final_dates: dict[str, list[dt.date]] = {}
+    final_bars: dict[str, list[PriceBar]] = {}
 
     try:
         for symbol in symbols:
@@ -106,9 +126,9 @@ def run(
 
             log.count("symbols_ok")
             log.set_count(f"rows::{symbol}", len(bars))
-            final_dates[symbol] = [b.date for b in csv_audit.read_current(symbol)]
+            final_bars[symbol] = csv_audit.read_current(symbol)
 
-        _flag_missing_sessions(log, final_dates)
+        _flag_missing_sessions(log, final_bars)
 
         log.quota["requests"] = COUNTER.snapshot()
         status = "partial" if log.counts.get("failed") else "ok"

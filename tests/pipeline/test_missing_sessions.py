@@ -123,3 +123,43 @@ def test_no_hole_no_noise(isolated_root, monkeypatch):
     log = fetch_prices.run(["^TWII", "0050.TW"], task="test_tw", run_date=_d(18))
 
     assert not [k for k in log.counts if k.startswith("missing_sessions::")]
+
+def _halted(symbol: str, day: int) -> list[PriceBar]:
+    """休市日個股仍會掛出的假列：開盤價等於收盤價，成交量 0。"""
+    return [
+        PriceBar(symbol=symbol, date=_d(day), open=100.0, high=100.0, low=100.0,
+                 close=100.0, volume_shares=0.0, source="test",
+                 as_of=dt.datetime(2026, 9, 18, 18, 0, 0))
+    ]
+
+
+def test_non_trading_day_does_not_frame_the_index_as_missing(isolated_root, monkeypatch):
+    """台股休市日個股仍會掛出 `Open=Close`、`volume=0` 的假列，指數不會。
+
+    2026-07-10 實際發生：`0050.TW`、`006208.TW`、`2330.TW` 全都有那一列
+    （Open=Close、量 0），`^TWII` 沒有 —— **指數沒有資料才是對的，沒有交易
+    就沒有指數**。拿個股的假列當基準，會把正確的指數判成缺漏。
+
+    那一天卡在序列**中間**（07-09 與 07-13 之間），所以「只看自己涵蓋範圍內」
+    擋不住它。而且它留在一年的滾動視窗裡，等於接下來十個月每天報一次 ——
+    **每天都報一句，就沒有人會再讀它。**
+    """
+    monkeypatch.setattr(
+        fetch_prices.yfinance_src, "fetch_daily",
+        lambda symbol, **kw: (
+            _bars(symbol, [16, 18]) if symbol == "^TWII"
+            else _bars(symbol, [16, 18]) + _halted(symbol, 17)
+        ),
+    )
+
+    log = fetch_prices.run(["^TWII", "0050.TW"], task="test_tw", run_date=_d(18))
+
+    assert "missing_sessions::^TWII" not in log.counts, log.notes
+
+
+def test_a_real_hole_still_fires_when_volume_is_present(isolated_root, monkeypatch):
+    """把假交易日剔掉之後，真正的洞仍然要報 —— 別把偵測器修成永遠沉默。"""
+    _fake_source(monkeypatch, {"^TWII": [15, 16, 17], "0050.TW": [15, 17]})
+    log = fetch_prices.run(["^TWII", "0050.TW"], task="test_tw", run_date=_d(18))
+
+    assert log.counts.get("missing_sessions::0050.TW") == 1
