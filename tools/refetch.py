@@ -64,9 +64,11 @@ def main(argv: list[str]) -> int:
         log.append()
         return 0
 
-    # 稽核軌跡先留一份，再覆寫計算用的那份（§4.4 第 1 點）
+    # 稽核軌跡先留一份，再覆寫計算用的那份（§4.4 第 1 點）。
+    # `replace=True`：這一支是**唯一**可以整條覆寫的入口 —— 重抓的用途正是
+    # 「本機這份是錯的」，保留舊列會把要修掉的東西留下來。
     csv_audit.write_raw(symbol, bars, dt.date.today())
-    csv_audit.write_current(symbol, bars)
+    csv_audit.write_current(symbol, bars, replace=True)
 
     repo = SqliteRepo(config.db_path())
     repo.init_schema()

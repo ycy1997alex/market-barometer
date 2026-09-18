@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 from pathlib import Path
+from typing import NamedTuple
 
 from barometer import config
 from barometer.domain.ports import PriceBar
@@ -50,21 +51,58 @@ def write_raw(symbol: str, bars: list[PriceBar], run_date: dt.date) -> Path:
     return path
 
 
-def write_current(symbol: str, bars: list[PriceBar]) -> Path:
-    """寫最新完整序列。允許被覆寫。"""
+class CurrentWrite(NamedTuple):
+    """寫完之後呼叫端需要知道的兩件事。
+
+    `retained` 是「來源這次沒回、本機留著」的那些交易日。空的才是正常的一天 ——
+    非空就要進 run log，安靜地補洞跟安靜地挖洞一樣糟，兩者事後都查不出來。
+    """
+    path: Path
+    retained: list[dt.date]
+
+
+def write_current(
+    symbol: str, bars: list[PriceBar], replace: bool = False
+) -> CurrentWrite:
+    """寫最新完整序列。**同一天的以這次抓回來的為準，本機獨有的日期留著。**
+
+    原本這裡是整份覆寫，而 yfinance 回 `0050.TW`、`006208.TW` 時固定會漏掉
+    前一個交易日（隔天才補），於是計算用的那份每天都有一個洞 —— SQLite 那份
+    沒有（upsert 累積），偏偏 `build_page` 讀的是這份。連續四天沒人發現。
+
+    保留既有的列是**補洞（backfill，§4.1）**：一個值都不動，只是不要把列刪掉。
+    來源回頭改寫歷史是 `compare_overlap` 的職責（記旗標），不在這裡處理。
+
+    `replace=True` 才是整條覆寫，只留給 `tools/refetch.py` —— 重抓的用途正是
+    「本機這份是錯的」，那時候保留舊列會把要修掉的東西留下來（§1 紅線 6：
+    重抓永遠是手動的）。
+    """
     d = config.price_current_dir()
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{_safe_name(symbol)}.csv"
+
+    merged = list(bars)
+    retained: list[dt.date] = []
+    if not replace:
+        incoming = {b.date for b in bars}
+        kept = [b for b in _read_path(path) if b.date not in incoming]
+        retained = sorted(b.date for b in kept)
+        merged += kept
+    merged.sort(key=lambda b: b.date)
+
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(_HEADER)
-        w.writerows(_rows(bars))
-    return path
+        w.writerows(_rows(merged))
+    return CurrentWrite(path=path, retained=retained)
 
 
 def read_current(symbol: str) -> list[PriceBar]:
     """讀回最新序列。檔案不存在就是空的，不是錯誤（第一天本來就沒有）。"""
-    path = config.price_current_dir() / f"{_safe_name(symbol)}.csv"
+    return _read_path(config.price_current_dir() / f"{_safe_name(symbol)}.csv")
+
+
+def _read_path(path: Path) -> list[PriceBar]:
     if not path.exists():
         return []
 

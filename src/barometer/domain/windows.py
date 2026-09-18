@@ -28,6 +28,28 @@ def last_n_sessions(dates: list[dt.date], n: int = 5) -> list[dt.date]:
     return sorted(set(dates))[-n:]
 
 
+def missing_sessions(
+    dates: list[dt.date], reference: list[dt.date]
+) -> list[dt.date]:
+    """`reference` 有、`dates` 沒有，而且落在 `dates` 自己涵蓋範圍內的交易日。
+
+    參考基準刻意是「同一批其他標的的聯集」，不是交易日曆 —— 這個專案不維護
+    交易日曆（颱風假、臨時休市、資料延遲都會讓它過期）。同一批裡別人有、
+    我沒有，本身就是夠強的訊號。
+
+    **限定在自己的涵蓋範圍內**，否則歷史比較短的標的會把它上市之前的每一天
+    都報成缺漏 —— SPCX 只有 67 根，同一批的 NVDA 有 251 根，那不是洞。
+
+    呼叫端要自己先分市場。台股與美股的交易日不對齊（2026-09-07 美國勞動節
+    台股照常），混在一起比會讓每一檔都亮燈。
+    """
+    if not dates:
+        return []
+    have = set(dates)
+    lo, hi = min(dates), max(dates)
+    return sorted(d for d in set(reference) if lo <= d <= hi and d not in have)
+
+
 def preceding_session(day: dt.date, other_sessions: list[dt.date]) -> dt.date | None:
     """`day` 這一天，另一個市場**最近一場已經收完**的交易日。
 
