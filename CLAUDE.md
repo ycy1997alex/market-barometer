@@ -38,7 +38,7 @@ conda activate barometer
 
 ```powershell
 $py = "C:\Users\Alex\anaconda3\envs\barometer\python.exe"   # Python 3.13.15
-$env:STOCKDATA_ROOT = "D:\Research\_stockdata"              # 已設在使用者層級
+$env:STOCKDATA_ROOT = "D:\Repo\_stockdata"                  # 已設在使用者層級
 
 & $py -m pytest -q                          # 測試，收工前要全綠
 & $py tools/fetch_macro.py                  # 24 項總經指標
@@ -98,7 +98,7 @@ $env:STOCKDATA_ROOT = "D:\Research\_stockdata"              # 已設在使用者
 
 **`docs/` 由排程自動 commit + push；其他一律作者發動。**
 
-`tools/publish_and_push.ps1`（排程任務 `Barometer-Publish`，每天 22:40）跑完 `publish.py` 之後會自己 `git add -- docs` → commit → `git push origin HEAD`，push 進 master 就觸發 Actions 部署 Pages。這是刻意開的例外，撐著它的是三件事：
+`tools/publish_and_push.ps1`（排程任務 `Barometer-Publish`，每天 21:50）跑完 `publish.py` 之後會自己 `git add -- docs` → commit → `git push origin HEAD`，push 進 master 就觸發 Actions 部署 Pages。這是刻意開的例外，撐著它的是三件事：
 
 1. **它動得到的只有 `docs/` 底下那一份密文。** 只 stage `docs/`，不用 `git add -A`、不用 `git add .`、永遠不用 `-f`（`-f` 會繞過 `.gitignore`，而 `secrets/`、`Key/` 正是靠它擋著）。
 2. **進來時 index 不是空的就中止。** 作者手上 staged 的東西，排程不碰、也不替他 reset 掉。

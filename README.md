@@ -135,7 +135,7 @@ tools/                  ← 一次性腳本與驗收（不進 src/）
 ### 本機共用資料層（不在任何 repo 內）
 
 ```
-%STOCKDATA_ROOT%\           預設 D:\Research\_stockdata
+%STOCKDATA_ROOT%\           預設 D:\Repo\_stockdata
 ├─ market.db                ← SQLite：價格、總經、評分歷史、快取
 ├─ price_raw\<YYYY-MM-DD>\  ← 當天抓到什麼就存什麼，append-only 稽核軌跡
 ├─ price_current\           ← 最新完整序列，計算用。合併寫入：來源這次沒回的日期留著
@@ -157,7 +157,7 @@ conda activate barometer
 pip install -e ".[tw,dev]"
 
 # 2. 資料根目錄與 schema
-$env:STOCKDATA_ROOT = "D:\Research\_stockdata"
+$env:STOCKDATA_ROOT = "D:\Repo\_stockdata"
 python tools/init_db.py            # 驗收：列出六張表
 
 # 3. 憑證（Shioaji，選配；沒有它只是不做交叉比對）
@@ -185,7 +185,7 @@ pytest -q
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_tasks.ps1
 ```
 
-`register_tasks.ps1` 是整份時刻表的唯一宣告處（六班：09:00 美股、09:05 總經、18:00 台股、18:05 籌碼、22:30 融資融券、22:40 發布），跑一次就在 Windows 工作排程器裡建好，換一台機器也是跑這一支。註冊前會先把現有任務匯出備份，路徑印在畫面上。
+`register_tasks.ps1` 是整份時刻表的唯一宣告處（六班：09:00 美股、09:05 總經、18:00 台股、18:05 籌碼、21:45 融資融券、21:50 發布），跑一次就在 Windows 工作排程器裡建好，換一台機器也是跑這一支。註冊前會先把現有任務匯出備份，路徑印在畫面上。
 
 最後那一班 `Barometer-Publish` 呼叫的是 `tools/publish_and_push.ps1`：`publish.py` → 有變才 `git add -- docs` → commit → push → Actions 部署 Pages。它只動得到 `docs/` 底下那一份密文，每次都在 `%STOCKDATA_ROOT%\runlog\publish_push.log` 留一行。
 
@@ -240,7 +240,7 @@ Domain 層**刻意不依賴**上述任何一個 —— 它是純 Python，這由
 
 | 項目 | 值 |
 |---|---|
-| `STOCKDATA_ROOT` | 資料根目錄，預設 `D:\Research\_stockdata` |
+| `STOCKDATA_ROOT` | 資料根目錄，預設 `D:\Repo\_stockdata` |
 | FRED | 金鑰放 `Key\FRED API Key.txt` 或環境變數 `FRED_API_KEY`（**選配**）。有金鑰走官方 API（120 req/min），沒有就退回 `fredgraph.csv` 免金鑰端點（30 req/min） |
 | Shioaji | 憑證放 `%STOCKDATA_ROOT%\secrets\shioaji.json`，以主機名稱 + 使用者 + MAC 衍生金鑰加密 |
 

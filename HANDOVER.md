@@ -182,8 +182,8 @@ python tools/score_index.py
 | 09:05 | `Barometer-Macro` | 抓總經（FRED / 國發會沒有固定公布時刻，跟著美股那班跑） |
 | 18:00 | `Barometer-Daily-TW` | 抓台股三檔（實測 18:00:01 就有當天收盤） |
 | 18:05 | `Barometer-Chips-TW` | 三大法人 T86 + 台指期 + put/call（T86 約 17:30 公布） |
-| 22:30 | `Barometer-Chips-TW-Late` | **只補融資融券**（約 21:30 才公布，18:00 那班不去問它） |
-| 22:40 | `Barometer-Publish` | `publish.py` → 有變才 commit + push `docs/` |
+| 21:45 | `Barometer-Chips-TW-Late` | **只補融資融券**（約 21:30 才公布，18:00 那班不去問它） |
+| 21:50 | `Barometer-Publish` | `publish.py` → 有變才 commit + push `docs/` |
 | push 之後 | GitHub Actions | 部署 Pages |
 
 **發布排在一天的最後**：當天的資料全部落地了才產頁面，所以一天只 push 一次。中間任何一班失敗，最壞的情況是頁面停在昨天，不會出現半天份的頁面。
