@@ -25,7 +25,7 @@
 
 18:00 那一班**刻意不去問融資融券** —— 不是抓了失敗，是根本不發那個請求。
 少打一次註定落空的呼叫，run log 也不會每天多一筆看起來像故障的失敗（§6）。
-補抓排在 22:30，只抓融資融券，而且是**併進**當天既有的那一列，不覆寫。
+補抓排在 21:45，只抓融資融券，而且是**併進**當天既有的那一列，不覆寫。
 
 （這也是「頁面上為什麼不能只有一個更新時間」的另一個實例：同一天的台股盤後
 資料，兩個來源就差了四個小時。）
@@ -46,7 +46,7 @@ MISSING_BY_DESIGN = "融資維持率：市場級無公開來源，MI_MARGN 只�
 # 分班（見模組說明）。兩班加起來要涵蓋全部，而且不能重疊。
 ALL_PARTS = ("t86", "margin", "futures", "pcratio")
 EVENING_PARTS = ("t86", "futures", "pcratio")   # 18:00
-LATE_PARTS = ("margin",)                        # 22:30
+LATE_PARTS = ("margin",)                        # 21:45
 
 
 def merge_payload(existing: dict, incoming: dict) -> dict:
@@ -159,7 +159,7 @@ def run(
                 log.count("days_empty")
                 log.note(f"{date}：這一班的來源都沒有資料，當作還沒公布，不落地")
                 continue
-            # **併進既有的那一列，不覆寫** —— 22:30 那班不能洗掉 18:00 寫好的
+            # **併進既有的那一列，不覆寫** —— 21:45 那班不能洗掉 18:00 寫好的
             merged = merge_payload(repo.get_chips(date) or {}, payload)
             repo.put_chips(date, merged, as_of)
             log.count("days_ok")

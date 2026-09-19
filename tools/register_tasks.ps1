@@ -20,15 +20,15 @@ $Tools = Join-Path $RepoRoot "tools"
 #   09:05 總經 —— FRED / 國發會沒有固定時刻，跟著美股那班一起跑就好
 #   18:00 台股 —— 實測 18:00:01 跑完就有當天收盤
 #   18:05 籌碼 —— 三大法人 T86 約 17:30 公布
-#   22:30 籌碼補班 —— 融資融券約 21:30 才公布，18:00 那班根本不去問它
-#   22:40 發布 —— 排在最後：當天的資料全部落地了才產頁面，一天只 push 一次
+#   21:45 籌碼補班 —— 融資融券約 21:30 才公布，18:00 那班根本不去問它
+#   21:50 發布 —— 排在最後：當天的資料全部落地了才產頁面，一天只 push 一次
 $Tasks = @(
     @{ Name = "Barometer-Daily-US";      At = "09:00"; Script = "run_daily.ps1";         Extra = @("-Market", "us");         Desc = "market-barometer daily us fetch" },
     @{ Name = "Barometer-Macro";         At = "09:05"; Script = "run_daily.ps1";         Extra = @("-Market", "macro");      Desc = "market-barometer macro fetch" },
     @{ Name = "Barometer-Daily-TW";      At = "18:00"; Script = "run_daily.ps1";         Extra = @("-Market", "tw");         Desc = "market-barometer daily tw fetch" },
     @{ Name = "Barometer-Chips-TW";      At = "18:05"; Script = "run_daily.ps1";         Extra = @("-Market", "chips");      Desc = "market-barometer tw chips (T86 + futures)" },
-    @{ Name = "Barometer-Chips-TW-Late"; At = "22:30"; Script = "run_daily.ps1";         Extra = @("-Market", "chips-late"); Desc = "market-barometer tw margin trading (late)" },
-    @{ Name = "Barometer-Publish";       At = "22:40"; Script = "publish_and_push.ps1";  Extra = @();                        Desc = "market-barometer publish + push docs/" }
+    @{ Name = "Barometer-Chips-TW-Late"; At = "21:45"; Script = "run_daily.ps1";         Extra = @("-Market", "chips-late"); Desc = "market-barometer tw margin trading (late)" },
+    @{ Name = "Barometer-Publish";       At = "21:50"; Script = "publish_and_push.ps1";  Extra = @();                        Desc = "market-barometer publish + push docs/" }
 )
 
 # --- 備份現有定義 ---
