@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 
 $Python = "C:\Users\Alex\anaconda3\envs\barometer\python.exe"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$env:STOCKDATA_ROOT = "D:\Research\_stockdata"
+$env:STOCKDATA_ROOT = "D:\Repo\_stockdata"
 $env:PYTHONPATH = Join-Path $RepoRoot "src"
 $env:PYTHONIOENCODING = "utf-8"
 

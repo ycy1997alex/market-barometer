@@ -1,7 +1,7 @@
 """路徑與標的清單（ToDo §3.4、§7.1）。
 
 **兩個 repo 都不得寫死絕對路徑** —— 一律走 STOCKDATA_ROOT，
-預設 D:\\Research\\_stockdata。資料根目錄刻意放在兩個 repo 之外，
+預設 D:\\Repo\\_stockdata。資料根目錄刻意放在兩個 repo 之外，
 一份資料餵兩個站（§1 第 8 條）。
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-DEFAULT_ROOT = Path(r"D:\Research\_stockdata")
+DEFAULT_ROOT = Path(r"D:\Repo\_stockdata")
 
 
 def stockdata_root() -> Path:

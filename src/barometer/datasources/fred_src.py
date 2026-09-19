@@ -72,7 +72,7 @@ def _default_search() -> list[Path]:
     repo_root = Path(__file__).resolve().parents[3]
     return [
         repo_root / "Key",
-        Path(os.environ.get("STOCKDATA_ROOT", r"D:\Research\_stockdata")) / "secrets",
+        Path(os.environ.get("STOCKDATA_ROOT", r"D:\Repo\_stockdata")) / "secrets",
     ]
 
 

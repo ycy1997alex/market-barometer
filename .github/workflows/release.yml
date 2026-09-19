@@ -71,6 +71,6 @@ jobs:
             本機資料管線的桌面儀表。
 
             - 這支 exe **只讀本機快取並在按下「更新」時打網路**，不含任何金鑰。
-            - 資料根目錄走環境變數 `STOCKDATA_ROOT`，預設 `D:\Research\_stockdata`。
+            - 資料根目錄走環境變數 `STOCKDATA_ROOT`，預設 `D:\Repo\_stockdata`。
               第一次在新機器上跑會是空的，按「更新」抓一次總經資料即可。
             - 不含 shioaji：台股交叉比對只在本機跑。

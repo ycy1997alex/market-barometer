@@ -26,7 +26,7 @@ $ErrorActionPreference = "Stop"
 # 沒有紀錄的失敗，事後跟「排程根本沒觸發」長得一模一樣。
 $Python = "C:\Users\Alex\anaconda3\envs\barometer\python.exe"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$env:STOCKDATA_ROOT = "D:\Research\_stockdata"
+$env:STOCKDATA_ROOT = "D:\Repo\_stockdata"
 $env:PYTHONPATH = Join-Path $RepoRoot "src"
 $env:PYTHONIOENCODING = "utf-8"
 
