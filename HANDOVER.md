@@ -9,7 +9,31 @@
 
 ## 1. 資料字典
 
-### 1.1 SQLite（`%STOCKDATA_ROOT%\market.db`，七張表）
+### 1.0 官方台股資料端點實測（2026-09-20）
+
+`tools/probe_twse_endpoints.py` 於 2026-09-20 以 2026-09-18 交易日（除權息另用 2025-06-10 至 2025-06-25）向官方端點各送一次 GET。以下是實際回應，不是依端點名稱推測。九個端點均回 HTTP 200、JSON，回應位元組均可用 UTF-8 解碼；有些 `Content-Type` 未宣告 charset。探測只印欄位與筆數，不把原始行情寫進 repo。
+
+| 資料 | 實測 URL | 回應日期／筆數 | 實際欄位 | 上櫃 8299 |
+|---|---|---|---|---|
+| 每日收盤 `STOCK_DAY_ALL` | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL` | `1150918`／1,377 | `Date`, `Code`, `Name`, `TradeVolume`, `TradeValue`, `OpeningPrice`, `HighestPrice`, `LowestPrice`, `ClosingPrice`, `Change`, `Transaction` | 無 |
+| 官方估值 `BWIBBU_ALL` | `https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL` | `1150918`／1,078 | `Date`, `Code`, `Name`, `PEratio`, `DividendYield`, `PBratio` | 無 |
+| 漲跌家數 `MI_INDEX` | `https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20260918&type=ALLBUT0999&response=json` | `20260918`／「漲跌證券數合計」5 列 | 該表為 `類型`, `整體市場`, `股票`；`股票` 欄的上漲 748、下跌 251 | 無 |
+| 上市月營收 | `https://openapi.twse.com.tw/v1/opendata/t187ap05_L` | `出表日期=1150917`, `資料年月=11508`／1,086 | `出表日期`, `資料年月`, `公司代號`, `公司名稱`, `產業別`, `營業收入-當月營收`, `營業收入-上月營收`, `營業收入-去年當月營收`, `營業收入-上月比較增減(%)`, `營業收入-去年同月增減(%)`, `累計營業收入-當月累計營收`, `累計營業收入-去年累計營收`, `累計營業收入-前期比較增減(%)`, `備註` | 無 |
+| 逐檔外資及陸資持股 `MI_QFIIS` | `https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20260918&response=json&selectType=ALLBUT0999` | `20260918`／1,362 | `證券代號`, `證券名稱`, `國際證券編碼`, `發行股數`, `外資及陸資尚可投資股數`, `全體外資及陸資持有股數`, `外資及陸資尚可投資比率`, `全體外資及陸資持股比率`, `外資及陸資共用法令投資上限比率`, `陸資法令投資上限比率`, `與前日異動原因(註)`, `最近一次上市公司申報外資及陸資持股異動日期` | 無 |
+| 逐檔當沖 `TWTB4U` | `https://www.twse.com.tw/exchangeReport/TWTB4U?date=20260918&response=json&selectType=All` | `20260918`／逐檔表 1,234 列 | 總量表：`當日沖銷交易總成交股數`, `當日沖銷交易總成交股數占市場比重%`, `當日沖銷交易總買進成交金額`, `當日沖銷交易總買進成交金額占市場比重%`, `當日沖銷交易總賣出成交金額`, `當日沖銷交易總賣出成交金額占市場比重%`；逐檔表：`證券代號`, `證券名稱`, `暫停現股賣出後現款買進當沖註記`, `當日沖銷交易成交股數`, `當日沖銷交易買進成交金額`, `當日沖銷交易賣出成交金額` | 無 |
+| 融券／借券賣出餘額 `TWT93U` | `https://www.twse.com.tw/rwd/zh/marginTrading/TWT93U?date=20260918&response=json` | `20260918`／1,302 | `代號`, `名稱`, `前日餘額`, `賣出`, `買進`, `現券`, `今日餘額`, `次一營業日限額`, `前日餘額`, `當日賣出`, `當日還券`, `當日調整`, `當日餘額`, `次一營業日可限額`, `備註` | 無 |
+| 除權息結果 `TWT49U` | `https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=20250610&endDate=20250625&response=json` | `114年06月10日` 起／167 | `資料日期`, `股票代號`, `股票名稱`, `除權息前收盤價`, `除權息參考價`, `權值+息值`, `權/息`, `漲停價格`, `跌停價格`, `開盤競價基準`, `減除股利參考價`, `詳細資料`, `最近一次申報資料 季別/日期`, `最近一次申報每股 (單位)淨值`, `最近一次申報每股 (單位)盈餘` | 無 |
+| 集保戶股權分散表 | `https://openapi.tdcc.com.tw/v1/opendata/1-5` | `20260918`／69,139 | `證券代號`, `占集保庫存數比例%`, `人數`, `\ufeff資料日期`, `股數`, `持股分級` | 有 |
+
+回應口徑注意事項：
+
+- TWSE OpenAPI 的 `MI_INDEX` 只有指數列；上表要用的真實漲跌家數在 TWSE 每日報表 JSON 的「漲跌證券數合計」表，且應讀 `股票` 欄，不能把包含其他商品的 `整體市場` 欄當成上市公司家數。`opendata/twtazu_od` 在實測當日仍停於 `1150605`，不可拿來當新鮮日資料。
+- TWSE OpenAPI 的 `MI_QFIIS_cat` 是類股彙總，不是逐檔持股；上表的 `MI_QFIIS` 每列有 `證券代號`。TWSE OpenAPI 的 `TWTB4U` 在實測時僅回 `Date`, `Code`, `Name`, `Suspension` 且日期為 `1150921`，不含當沖成交量；上表使用每日報表 JSON。
+- `TWT93U` 有兩組重名的 `前日餘額`，不可用 `dict(zip(fields, row))`，否則前一組會被覆蓋。索引 2–7 為融券，8–13 為借券賣出；借券賣出餘額是索引 12 的 `當日餘額`。所有數值單位應在正式 adapter 再核對報表註解。
+- `TWT49U` 的 2025-06-10 至 2025-06-25 回應沒有 `0050` 列，不能據此宣稱它已涵蓋 `0050` 的 1:4 分割。後續 4-3 須另找可驗證該事件的官方公告來源；這裡沒有把缺列當成「沒有分割」。
+- TDCC 的 `證券代號` 是固定寬度字串，例如 `8299  `，比對前要 `strip()`；日期欄實際鍵名含前置 U+FEFF。TWSE 的上述端點都沒有上櫃 `8299`，TDCC 有。ROC 日期至少有 `1150918`、`11508`、`114年06月10日`，不要當成同一種格式；TDCC 是西元 `20260918`。
+
+### 1.1 SQLite（`%STOCKDATA_ROOT%\market.db`，十四張表）
 
 | 表 | 一列代表 | 主鍵 | 誰寫的 |
 |---|---|---|---|
@@ -20,6 +44,15 @@
 | `score_history` | 一個標的某一天的分數 | (scope, symbol, as_of) | `pipeline/run_scores.py` |
 | `adjustment_event` | 一次手動重抓 | (symbol, detected_at) | `tools/refetch.py` |
 | `run_log` | 一次執行 | run_id | 每一支 pipeline |
+| `stock_chip_daily` | 一天一檔的 T86 法人買賣超，缺值記 `null` | (date, symbol) | `research/datasources/chips_tw.py` |
+| `price_adjusted` | 一檔標的的一根還原日 K | (symbol, date) | 後續 4-2 調整管線 |
+| `tw_stock_daily` | 一天一檔的官方 A/E/F/G/H 原始欄位 | (date, symbol) | 後續 3-1、3-5～3-7 |
+| `tw_market_daily` | 一天的官方 B 漲跌家數 | date | 後續 3-2 |
+| `tw_stock_weekly` | 一週一檔的 TDCC D 股權分散 | (date, symbol) | 後續 3-4 |
+| `tw_stock_monthly` | 一個月份一檔的 C 月營收 | (period, symbol) | 後續 3-3 |
+| `us_stock_local` | 一天一檔的一種美股本地維度 | (date, symbol, dimension) | 後續 5-1～5-3 |
+
+新表皆有資料日期（`date` 或 `data_date`）與抓取時間 `as_of`。`tw_stock_monthly` 額外以 `period` 表示營收所屬月份。`score_history` 新增 `comparable`、`native`、`strength` 三個實欄位與索引，可直接排序；舊分數列三欄為 `NULL`。2026-09-20 已先用 SQLite online backup 建立 `%STOCKDATA_ROOT%\market_pre_schema_20260920.db`，再升級實際資料庫；逐表以升級前的欄位比對筆數與 SHA-256 指紋，七張舊表的 5,672 列均保持相同。
 
 ### 1.2 單位 —— 這裡最容易出事
 
@@ -47,10 +80,27 @@
 | `chip_daily.margin_lots` | 這是 MI_MARGN 的「**今日**餘額」，是**暫定值**。TWSE 自己說「請以前日餘額為準」—— D 這天的定稿要等 D+1 抓回來的 `margin_prev_lots` |
 | `score_history.price_version` | 分割或除權息之後所有價格型指標都會變，**昨天的分數今天算會不一樣**。這一欄記的是用哪一版價格算的，不記就分不出差異來自市場還是來自資料被改寫 |
 
-### 1.4 CSV（`%STOCKDATA_ROOT%`，不進任何 repo）
+### 1.4 0050 `kbars` 價格口徑實測（2026-09-20）
 
-- `price_raw\<YYYY-MM-DD>\<symbol>.csv` —— 當天抓到什麼就存什麼，**append-only**。
-  同一天重跑會附加，不覆寫。這是稽核軌跡，是唯一能證明「來源改過歷史」的東西。
+用 `tools/probe_0050_adjustment.py` 查 Shioaji `kbars`、Yahoo Finance `history(auto_adjust=False, actions=True)`、證交所 `STOCK_DAY`，各取 0050 跨事件的前後交易日。證交所[分割公告](https://wwwc.twse.com.tw/staticFiles/news/news/tsecnews/8a8216d696b406fc0196ce27c2e90063.pdf)確認 2025-06-11～17 暫停交易、2025-06-18 以 4:1 分割後恢復買賣；證交所[配息清單](https://www.twse.com.tw/en/ETFortune-institute/dividendList?endDate=2025&startDate=2025&stkNo=0050)確認 2025-07-21 除息 0.36 元。
+
+| 事件 | 來源 | 前交易日收盤 | 事件日收盤 | 直接價差 |
+|---|---|---:|---:|---:|
+| 4:1 分割，06-10 → 06-18 | Shioaji `kbars` | 188.65 | 47.57 | −141.08 |
+| 同上 | TWSE `STOCK_DAY` | 188.65 | 47.57 | −141.08 |
+| 同上 | Yahoo `Close` | 47.1625 | 47.57 | +0.4075 |
+| 除息，07-18 → 07-21 | Shioaji `kbars` | 51.45 | 50.90 | −0.55 |
+| 同上 | TWSE `STOCK_DAY` | 51.45 | 50.90 | −0.55 |
+| 同上 | Yahoo `Close` | 51.45 | 50.90 | −0.55 |
+
+**結論：0050 的 Shioaji `kbars` 在這兩個事件的歷史日 K 是未還原價格。** 分割前的 188.65 與證交所原始收盤價一致；Yahoo 即使 `auto_adjust=False`，分割前的 `Close` 也已除以 4。`188.65 / 4 = 47.1625`，因此 Shioaji 與 Yahoo 的直接跨期價差不可相比。除息日的 Shioaji 收盤價也與證交所原始價一致，沒有把 0.36 元加回；Yahoo 的 `Adj Close` 另有股息調整。此實測只證明 0050 這兩個事件的口徑，不能直接推論其他標的或其他事件。三方成交量略有差異，本節只用收盤價判定還原口徑。
+
+查詢時 Shioaji 共回 27 根日 K、`usage().remaining_bytes` 為 507,472,195；Yahoo 回 32 根、證交所四個指定交易日均有資料。探測工具只印事件附近四日數值，不把價格原始序列或憑證寫入 repo。
+
+### 1.5 CSV（`%STOCKDATA_ROOT%`，不進任何 repo）
+
+- `price_raw\<YYYY-MM-DD>.jsonl.gz` —— 當天所有標的的抓取結果寫進同一個 gzip JSONL；同一天重跑會附加 gzip member，不覆寫舊紀錄。每列仍有 `symbol`, `date`, OHLCV, `source`, `as_of`, `stale`，是來源改寫歷史時的稽核對照。
+- `csv_audit.read_raw(date)` 會同時讀新格式與尚未搬移的 `price_raw\<YYYY-MM-DD>\<symbol>.csv`。`tools/migrate_price_raw.py` 先寫暫存 gzip、逐列驗證，再替換目的檔與刪除已轉換的 CSV。2026-09-20 已將 222 個舊 CSV 的 66,520 列轉成 12 個每日檔，逐列與 `price_raw_legacy_20260920.zip` 原檔備份比對相同。
 - `price_current\<symbol>.csv` —— 最新完整序列，計算用。**合併寫入，不是整份覆寫**：
   同一天的以這次抓回來的為準，來源這次沒回、本機已有的日期留著（2026-09-18 起）。
   yfinance 回 `0050.TW`、`006208.TW` 時固定漏掉前一個交易日，整份覆寫會在這裡挖出
