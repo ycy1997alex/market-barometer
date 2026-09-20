@@ -6,10 +6,12 @@ r"""發布驗收（ToDo §5.5）。**每次發布之後跑，不是有空才跑�
 用法：
     python tools/verify_publish.py                 # 驗 market-barometer
     python tools/verify_publish.py stock-research  # 驗另一個站
+    python tools/verify_publish.py --artifact D:\\Repo\\_stockdata\\build\\market-barometer.sealed.html
 """
 from __future__ import annotations
 
 import json
+import base64
 import re
 import subprocess
 import sys
@@ -34,6 +36,14 @@ def _extract_envelope(sealed_html: str) -> dict:
     return json.loads(m.group(1))
 
 
+def compression_ratio(env: dict, plaintext: str) -> float:
+    """Encrypted content bytes divided by original UTF-8 HTML bytes."""
+    size = len(plaintext.encode("utf-8"))
+    if size == 0:
+        return float("inf")
+    return len(base64.b64decode(env["content"]["ct"])) / size
+
+
 def _git(repo: Path, *args: str) -> str:
     """跑一次 git，回它的 stdout；拿不到就回空字串。
 
@@ -52,10 +62,16 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    site = argv[0] if argv else credentials.MARKET_BAROMETER
+    site = next((arg for arg in argv if arg in REPO_OF), credentials.MARKET_BAROMETER)
     repo = REPO_OF[site]
     docs = repo / "docs"
-    index = docs / "index.html"
+    if "--artifact" in argv:
+        position = argv.index("--artifact")
+        if position + 1 >= len(argv):
+            raise SystemExit("--artifact 需要密文 HTML 路徑")
+        index = Path(argv[position + 1])
+    else:
+        index = docs / "index.html"
 
     print(f"=== §5.5 發布驗收：{site} ===")
     if not index.exists():
@@ -95,15 +111,23 @@ def main(argv: list[str]) -> int:
 
     # 4. 每一組有效憑證都能解開，逐一測過
     opened, slots_ok = 0, True
+    opened_plain: str | None = None
     for material, slot in zip(creds.materials, creds.slot_ids):
         try:
-            envelope.open_envelope(env, material)
+            decoded = envelope.open_envelope(env, material)
             opened += 1
+            if opened_plain is None:
+                opened_plain = decoded
             slots_ok &= envelope.which_slot(env, material) == slot
-        except envelope.WrongCredential:
+        except (envelope.WrongCredential, envelope.ContentDecodeError):
             pass
     check(opened == len(creds), f"{opened}/{len(creds)} 組有效憑證都解得開")
     check(slots_ok, "槽位代號 t 沒有錯位（§5.5 最後一項）")
+
+    # 4.1. Encrypted payload includes the GCM tag; HTML shell overhead is excluded.
+    ratio = compression_ratio(env, opened_plain) if opened_plain is not None else float("inf")
+    check(env["content"].get("encoding") == "gzip" and 0 < ratio <= 0.8,
+          f"gzip 密文／明文位元組比 {ratio:.1%}（須 ≤80%）")
 
     # 5. 錯誤憑證只得到失敗
     bad = envelope.material_two_lock("nope", "nope") if creds.mode == "two" \
@@ -127,10 +151,12 @@ def main(argv: list[str]) -> int:
 
     # 8. market-barometer 專屬：明文不得含行動字眼
     if site == credentials.MARKET_BAROMETER:
-        plain = envelope.open_envelope(env, creds.materials[0])
-        findings = lint.lint(plain)
-        check(not findings,
-              f"明文裡沒有行動字眼（§2.1，命中 {len(findings)} 處）")
+        if opened_plain is None:
+            check(False, "明文無法解開，不能執行內容 lint")
+        else:
+            findings = lint.lint(opened_plain)
+            check(not findings,
+                  f"明文裡沒有行動字眼（§2.1，命中 {len(findings)} 處）")
 
     # 9. robots noindex
     check('name="robots"' in sealed and "noindex" in sealed,

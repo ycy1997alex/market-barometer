@@ -30,6 +30,7 @@ CEK。** AES-GCM 在同一把 key 下重用 IV，機密性與完整性會**同�
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import os
 import secrets
@@ -38,7 +39,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-VERSION = 1
+VERSION = 2
 
 # PBKDF2 是 WebCrypto 裡唯一可用的 KDF（沒有 Argon2、沒有 scrypt），
 # 所以迭代數就是防線的上限。310,000 是 2026 年的**下限**，不是上限（§5.4 第 5 條）。
@@ -55,6 +56,10 @@ CEK_BYTES = 32
 
 class WrongCredential(ValueError):
     """沒有任何一組 wrapped 解得開 —— 就是密碼錯，沒有別的可能。"""
+
+
+class ContentDecodeError(ValueError):
+    """解密成功，但內容無法解壓或解碼。"""
 
 
 def _b64(raw: bytes) -> str:
@@ -112,7 +117,8 @@ def seal(
 
     cek = os.urandom(CEK_BYTES)
     iv_content = os.urandom(IV_BYTES)
-    ct = AESGCM(cek).encrypt(iv_content, plaintext.encode("utf-8"), AAD_CONTENT)
+    compressed = gzip.compress(plaintext.encode("utf-8"), mtime=0)
+    ct = AESGCM(cek).encrypt(iv_content, compressed, AAD_CONTENT)
 
     slots = slot_ids or [secrets.token_hex(2) for _ in materials]
 
@@ -133,7 +139,7 @@ def seal(
         "v": VERSION,
         "pub_id": hashlib.sha256(ct).hexdigest()[:16],
         "kdf": {"alg": "PBKDF2-SHA256", "iter": ITERATIONS, "dklen": DKLEN},
-        "content": {"iv": _b64(iv_content), "ct": _b64(ct)},
+        "content": {"iv": _b64(iv_content), "ct": _b64(ct), "encoding": "gzip"},
         "keys": keys,
     }
 
@@ -159,9 +165,18 @@ def _unwrap(env: dict, material: bytes) -> tuple[bytes, str]:
 
 def open_envelope(env: dict, material: bytes) -> str:
     cek, _ = _unwrap(env, material)
-    return AESGCM(cek).decrypt(
+    payload = AESGCM(cek).decrypt(
         _unb64(env["content"]["iv"]), _unb64(env["content"]["ct"]), AAD_CONTENT
-    ).decode("utf-8")
+    )
+    encoding = env["content"].get("encoding")
+    try:
+        if encoding == "gzip":
+            payload = gzip.decompress(payload)
+        elif encoding is not None:
+            raise ContentDecodeError(f"不支援的內容編碼：{encoding}")
+        return payload.decode("utf-8")
+    except (OSError, EOFError, UnicodeDecodeError) as exc:
+        raise ContentDecodeError("內容解壓失敗或不是 UTF-8") from exc
 
 
 def which_slot(env: dict, material: bytes) -> str:

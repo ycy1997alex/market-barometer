@@ -140,7 +140,19 @@ async function decryptContent(cekBytes) {
       additionalData: enc.encode("barometer-v1") },
     cek, b64(ENV.content.ct)
   );
-  return new TextDecoder().decode(plain);
+  const encoding = ENV.content.encoding;
+  if (!encoding) return new TextDecoder("utf-8", { fatal: true }).decode(plain);
+  if (encoding !== "gzip") throw new Error("不支援的內容編碼：" + encoding);
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("瀏覽器不支援 gzip 解壓，請更新瀏覽器");
+  }
+  try {
+    const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"));
+    const uncompressed = await new Response(stream).arrayBuffer();
+    return new TextDecoder("utf-8", { fatal: true }).decode(uncompressed);
+  } catch (e) {
+    throw new Error("內容解壓失敗，請重新載入頁面或聯絡管理者");
+  }
 }
 
 function show(html) {
@@ -182,6 +194,7 @@ function ping(slot) {
       return;  // sessionStorage 命中不送遙測，不然一次訪問會灌好幾筆
     } catch (e) {
       try { sessionStorage.removeItem(STORE_KEY); } catch (e2) {}
+      $("err").textContent = e && e.message ? e.message : "解鎖內容讀取失敗";
     }
   }
   $("p").focus();
@@ -201,9 +214,10 @@ $("form").addEventListener("submit", async (ev) => {
       err.textContent = "密碼錯誤";
       return;
     }
+    const html = await decryptContent(got.cek);
     remember(got.cek);
     ping(got.slot);
-    show(await decryptContent(got.cek));
+    show(html);
   } catch (e) {
     err.textContent = "解鎖失敗：" + (e && e.message ? e.message : e);
   } finally {

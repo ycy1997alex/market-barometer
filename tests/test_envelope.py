@@ -15,6 +15,10 @@
 from __future__ import annotations
 
 import json
+import base64
+from pathlib import Path
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import pytest
 
@@ -106,6 +110,41 @@ def test_two_publishes_share_no_salt_or_iv():
     assert not (ivs_a & ivs_b)
 
 
+def test_gzip_encrypt_decrypt_gunzip_returns_identical_utf8_bytes():
+    original = ("<p>臺灣與美國的行情\r\n</p>" * 1000).encode("utf-8")
+    material = envelope.material_one_lock("test-only")
+    env = envelope.seal(original.decode("utf-8"), [material])
+    cek, _ = envelope._unwrap(env, material)
+    encrypted = base64.b64decode(env["content"]["ct"])
+    compressed = AESGCM(cek).decrypt(
+        base64.b64decode(env["content"]["iv"]), encrypted, envelope.AAD_CONTENT
+    )
+
+    assert env["content"]["encoding"] == "gzip"
+    assert compressed.startswith(b"\x1f\x8b")
+    assert len(encrypted) / len(original) < 0.5
+    assert envelope.open_envelope(env, material).encode("utf-8") == original
+
+
+def test_browser_shell_has_gzip_decoder_and_visible_failure_message():
+    shell = Path(envelope.__file__).with_name("shell.html").read_text(encoding="utf-8")
+    assert 'new DecompressionStream("gzip")' in shell
+    assert "內容解壓失敗" in shell
+
+
+def test_corrupted_gzip_reports_content_error_after_successful_decryption():
+    material = envelope.material_one_lock("test-only")
+    env = envelope.seal("<p>valid</p>", [material])
+    cek, _ = envelope._unwrap(env, material)
+    iv = base64.b64decode(env["content"]["iv"])
+    env["content"]["ct"] = base64.b64encode(
+        AESGCM(cek).encrypt(iv, b"not a gzip stream", envelope.AAD_CONTENT)
+    ).decode("ascii")
+
+    with pytest.raises(envelope.ContentDecodeError, match="解壓失敗"):
+        envelope.open_envelope(env, material)
+
+
 def test_no_salt_or_iv_repeats_within_one_publish():
     env = envelope.seal(PLAINTEXT, _materials_two(FAKE_TWO_LOCK))
     salts = [k["salt"] for k in env["keys"]]
@@ -186,7 +225,7 @@ def test_kdf_iterations_meet_the_2026_floor():
 def test_envelope_shape_matches_the_spec():
     env = envelope.seal(PLAINTEXT, _materials_one(FAKE_ONE_LOCK))
     assert set(env) == {"v", "pub_id", "kdf", "content", "keys"}
-    assert set(env["content"]) == {"iv", "ct"}
+    assert set(env["content"]) == {"iv", "ct", "encoding"}
     assert all(set(k) == {"t", "salt", "iv", "wrapped"} for k in env["keys"])
 
 
