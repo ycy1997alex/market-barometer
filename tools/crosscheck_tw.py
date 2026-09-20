@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from barometer import config, secrets_store  # noqa: E402
 from barometer.datasources import shioaji_src  # noqa: E402
 from barometer.datasources.base import FetchError  # noqa: E402
+from barometer.domain import freshness  # noqa: E402
 from barometer.domain.reconcile import cross_check  # noqa: E402
 from barometer.pipeline.runlog import RunLog  # noqa: E402
 from barometer.storage import csv_audit  # noqa: E402
@@ -21,6 +22,16 @@ from barometer.storage.sqlite_repo import SqliteRepo  # noqa: E402
 
 # 只比對最近這段 —— shioaji 按流量計費，不要整年重抓
 LOOKBACK_DAYS = 30
+SPLIT_RESUMPTION_DATES = {"0050.TW": dt.date(2025, 6, 18)}
+
+
+def comparison_start(symbol: str, end: dt.date, lookback_days: int) -> dt.date | None:
+    """Clamp the comparison window so adjusted history cannot cross a split."""
+    first_valid = SPLIT_RESUMPTION_DATES.get(symbol)
+    if first_valid is not None and end < first_valid:
+        return None
+    start = end - dt.timedelta(days=lookback_days)
+    return max(start, first_valid) if first_valid is not None else start
 
 
 def main() -> int:
@@ -33,12 +44,18 @@ def main() -> int:
     repo.init_schema()
     as_of = dt.datetime.now()
     end = dt.date.today()
-    start = end - dt.timedelta(days=LOOKBACK_DAYS)
 
     total_conflicts = 0
     try:
         for symbol in config.TW_SYMBOLS:
             print(f"\n--- {symbol} ---")
+            start = comparison_start(symbol, end, LOOKBACK_DAYS)
+            if start is None:
+                message = f"{symbol}: 分割後尚無可比對交易日，略過"
+                print(f"  {message}")
+                log.note(message)
+                log.count("skipped")
+                continue
             try:
                 sj_bars, usage = shioaji_src.fetch_daily(
                     symbol, start=start, end=end, as_of=as_of
@@ -55,6 +72,14 @@ def main() -> int:
                 continue
 
             log.quota.setdefault("shioaji_usage", usage)
+            source_state = freshness.assess_source_series(
+                "每日", sj_bars[-1].date if sj_bars else None, end,
+                [bar.close for bar in sj_bars], key=symbol,
+            )
+            if not source_state.usable:
+                log.note(f"{symbol}: Shioaji {source_state.reason}，不進交叉比對")
+                log.count("failed")
+                continue
             yf_bars = [
                 b for b in csv_audit.read_current(symbol) if start <= b.date <= end
             ]
