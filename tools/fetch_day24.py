@@ -1,6 +1,6 @@
 """Day 24 第 4 項：抓 §7.1 六個標的的一年日線落地。
 
-驗收：price_raw\\<今天>\\ 有六個檔、price_current\\ 有六條序列、
+驗收：price_raw\\<今天>.jsonl.gz 含六檔、price_current\\ 有六條序列、
 筆數與 §7.1 對得上。
 """
 from __future__ import annotations
@@ -46,13 +46,13 @@ def main() -> int:
         print(f"{sym:<12}{len(bars):>6}{exp:>7}{closes[-1]:>14,.2f}  "
               f"{ret:>+9.1f}%  {stale_n}{mark}")
 
-    raw_dir = config.price_raw_dir(log.started_at.date().isoformat())
-    raw_files = sorted(p.name for p in raw_dir.glob("*.csv")) if raw_dir.exists() else []
+    raw_path = config.price_raw_path(log.started_at.date().isoformat())
+    raw_symbols = {row["symbol"] for row in csv_audit.read_raw(log.started_at.date())}
     cur_files = sorted(p.name for p in config.price_current_dir().glob("*.csv"))
-    print(f"\nprice_raw/{raw_dir.name}/ : {len(raw_files)} 檔 {raw_files}")
+    print(f"\nprice_raw/{raw_path.name} : {len(raw_symbols)} 檔標的 {sorted(raw_symbols)}")
     print(f"price_current/           : {len(cur_files)} 檔 {cur_files}")
 
-    ok = len(raw_files) >= len(symbols) and len(cur_files) >= len(symbols)
+    ok = set(symbols) <= raw_symbols and len(cur_files) >= len(symbols)
     print("\nOK 六檔都落地了" if ok else "\nFAIL 落地檔數不足")
     return 0 if ok else 1
 

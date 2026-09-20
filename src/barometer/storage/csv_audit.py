@@ -1,6 +1,6 @@
 """價格落地：兩份（ToDo §4.4 第 1 點）。
 
-- price_raw\\<YYYY-MM-DD>\\  當天抓到什麼就存什麼，含 as_of，**append-only 的稽核軌跡**
+- price_raw\\<YYYY-MM-DD>.jsonl.gz  每天一檔，含 as_of，**append-only 的稽核軌跡**
 - price_current\\            最新完整序列，允許被覆寫，計算用
 
 為什麼要兩份：yfinance 會回頭改寫歷史（分割、除權息），而且改了不一定會說
@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import gzip
+import json
 from pathlib import Path
 from typing import NamedTuple
 
@@ -38,17 +40,29 @@ def _rows(bars: list[PriceBar]) -> list[list]:
 
 
 def write_raw(symbol: str, bars: list[PriceBar], run_date: dt.date) -> Path:
-    """寫進當天的稽核軌跡。同一天重跑會**附加**，不覆寫 —— 這就是重點。"""
-    d = config.price_raw_dir(run_date.isoformat())
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / f"{_safe_name(symbol)}.csv"
-    exists = path.exists()
-    with path.open("a", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        if not exists:
-            w.writerow(_HEADER)
-        w.writerows(_rows(bars))
+    """Append this fetch to one compressed daily audit file, never overwrite."""
+    path = config.price_raw_path(run_date.isoformat())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "at", encoding="utf-8", newline="\n") as fh:
+        for row in _rows(bars):
+            record = {key: "" if value is None else str(value) for key, value in zip(_HEADER, row)}
+            fh.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
     return path
+
+
+def read_raw(run_date: dt.date) -> list[dict[str, str]]:
+    """Read both daily gzip records and any not-yet-migrated legacy CSVs."""
+    out: list[dict[str, str]] = []
+    path = config.price_raw_path(run_date.isoformat())
+    if path.exists():
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            out.extend(json.loads(line) for line in fh if line.strip())
+    legacy_dir = config.price_raw_dir(run_date.isoformat())
+    if legacy_dir.exists():
+        for legacy in sorted(legacy_dir.glob("*.csv")):
+            with legacy.open(newline="", encoding="utf-8") as fh:
+                out.extend(dict(row) for row in csv.DictReader(fh))
+    return out
 
 
 class CurrentWrite(NamedTuple):

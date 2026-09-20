@@ -42,8 +42,13 @@ def db_path() -> Path:
 
 
 def price_raw_dir(date_iso: str) -> Path:
-    """當天抓到什麼就存什麼的稽核軌跡，append-only（§4.4 第 1 點）。"""
+    """Legacy per-symbol CSV directory, retained for migration/read compatibility."""
     return stockdata_root() / "price_raw" / date_iso
+
+
+def price_raw_path(date_iso: str) -> Path:
+    """One compressed append-only audit stream for an entire fetch day."""
+    return stockdata_root() / "price_raw" / f"{date_iso}.jsonl.gz"
 
 
 def price_current_dir() -> Path:
