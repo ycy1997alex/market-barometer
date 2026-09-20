@@ -1,4 +1,4 @@
--- ToDo §3.5：六張扁平表，零 JOIN，payload 直接塞 JSON。刻意不上 ORM。
+-- ToDo §3.5：扁平表，零 JOIN，擴充欄位用 JSON payload；刻意不上 ORM。
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS price_daily (
@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS score_history (
     symbol         TEXT NOT NULL,
     as_of          TEXT NOT NULL,
     score          REAL NOT NULL,
+    comparable     REAL,
+    native         REAL,
+    strength       REAL,
     subscores_json TEXT NOT NULL,
     price_version  TEXT NOT NULL,         -- 用哪一版價格算的（§3.5）
     PRIMARY KEY (scope, symbol, as_of)
@@ -75,3 +78,79 @@ CREATE TABLE IF NOT EXISTS chip_daily (
     payload_json TEXT NOT NULL,
     as_of        TEXT NOT NULL
 );
+
+-- Individual T86 rows. A stored NULL is a confirmed missing value, not zero.
+CREATE TABLE IF NOT EXISTS stock_chip_daily (
+    date         TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL,
+    PRIMARY KEY (date, symbol)
+);
+
+-- Derived total-return OHLCV, separate from the immutable raw audit.
+CREATE TABLE IF NOT EXISTS price_adjusted (
+    symbol        TEXT NOT NULL,
+    date          TEXT NOT NULL,
+    open          REAL,
+    high          REAL,
+    low           REAL,
+    close         REAL,
+    volume_shares REAL,
+    source        TEXT NOT NULL,
+    as_of         TEXT NOT NULL,
+    stale         INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (symbol, date)
+);
+
+-- TWSE daily stock fields A/E/F/G/H. All-market requests are stored once.
+CREATE TABLE IF NOT EXISTS tw_stock_daily (
+    date         TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL,
+    PRIMARY KEY (date, symbol)
+);
+
+-- TWSE market breadth B has no individual stock symbol.
+CREATE TABLE IF NOT EXISTS tw_market_daily (
+    date         TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL
+);
+
+-- TDCC shareholder distribution D is published weekly.
+CREATE TABLE IF NOT EXISTS tw_stock_weekly (
+    date         TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL,
+    PRIMARY KEY (date, symbol)
+);
+
+-- Revenue C belongs to a reporting month but has a separate release date.
+CREATE TABLE IF NOT EXISTS tw_stock_monthly (
+    period       TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    data_date    TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL,
+    PRIMARY KEY (period, symbol)
+);
+
+-- Institution / insider / analyst observations are separate local dimensions.
+CREATE TABLE IF NOT EXISTS us_stock_local (
+    date         TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    dimension    TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    as_of        TEXT NOT NULL,
+    PRIMARY KEY (date, symbol, dimension)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_chip_symbol_date ON stock_chip_daily (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_adjusted_symbol_date ON price_adjusted (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_tw_stock_daily_symbol_date ON tw_stock_daily (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_tw_stock_weekly_symbol_date ON tw_stock_weekly (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_tw_stock_monthly_symbol_period ON tw_stock_monthly (symbol, period);
+CREATE INDEX IF NOT EXISTS idx_us_stock_local_symbol_date ON us_stock_local (symbol, date);

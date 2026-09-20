@@ -15,10 +15,12 @@ from barometer.domain.ports import MacroSeries, PriceBar, ScoreRecord
 class InMemoryRepo:
     def __init__(self) -> None:
         self._prices: dict[tuple[str, dt.date], PriceBar] = {}
+        self._adjusted_prices: dict[tuple[str, dt.date], PriceBar] = {}
         self._conflicts: list[dict] = []
         self._macro: dict[str, MacroSeries] = {}
         self._scores: dict[tuple[str, str, dt.date], ScoreRecord] = {}
         self._chips: dict[dt.date, dict] = {}
+        self._stock_chips: dict[tuple[dt.date, str], dict] = {}
         self._adjustments: list[dict] = []
         self._runs: dict[str, dict] = {}
 
@@ -45,6 +47,17 @@ class InMemoryRepo:
     def last_price_date(self, symbol: str) -> dt.date | None:
         dates = [d for (s, d) in self._prices if s == symbol]
         return max(dates) if dates else None
+
+    def upsert_adjusted_prices(self, bars: list[PriceBar]) -> int:
+        for bar in bars:
+            self._adjusted_prices[(bar.symbol, bar.date)] = bar
+        return len(bars)
+
+    def get_adjusted_prices(self, symbol: str) -> list[PriceBar]:
+        return sorted(
+            (bar for (stored_symbol, _), bar in self._adjusted_prices.items() if stored_symbol == symbol),
+            key=lambda bar: bar.date,
+        )
 
     def record_conflict(
         self,
@@ -103,6 +116,9 @@ class InMemoryRepo:
         score: float,
         subscores: dict[str, float],
         price_version: str,
+        comparable: float | None = None,
+        native: float | None = None,
+        strength: float | None = None,
     ) -> None:
         self._scores[(scope, symbol, as_of)] = ScoreRecord(
             scope=scope,
@@ -111,6 +127,9 @@ class InMemoryRepo:
             score=score,
             subscores=dict(subscores),
             price_version=price_version,
+            comparable=comparable,
+            native=native,
+            strength=strength,
         )
 
     def get_scores(self, scope: str, symbol: str) -> list[ScoreRecord]:
@@ -119,6 +138,18 @@ class InMemoryRepo:
             if sc == scope and sy == symbol
         ]
         return sorted(out, key=lambda r: r.as_of)
+
+    def list_scores_ordered(self, scope: str, field: str) -> list[ScoreRecord]:
+        if field not in {"comparable", "native", "strength"}:
+            raise ValueError(f"Unsupported score sort field: {field}")
+        return sorted(
+            (record for (stored_scope, _, _), record in self._scores.items() if stored_scope == scope),
+            key=lambda record: (
+                getattr(record, field) is None,
+                -(getattr(record, field) or 0),
+                record.symbol,
+            ),
+        )
 
     # ---------------- adjustment_event / run_log ----------------
 
@@ -179,3 +210,16 @@ class InMemoryRepo:
             for d, p in sorted(self._chips.items())
             if start <= d <= end
         ]
+
+    def put_stock_chips(
+        self, date: dt.date, payloads: dict[str, dict], as_of: dt.datetime
+    ) -> None:
+        for symbol, payload in payloads.items():
+            self._stock_chips[(date, symbol)] = copy.deepcopy(payload)
+
+    def get_stock_chips(self, date: dt.date, symbols: list[str]) -> dict[str, dict]:
+        return {
+            symbol: copy.deepcopy(self._stock_chips[(date, symbol)])
+            for symbol in symbols
+            if (date, symbol) in self._stock_chips
+        }

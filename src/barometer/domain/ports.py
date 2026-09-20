@@ -54,6 +54,9 @@ class ScoreRecord:
     score: float
     subscores: dict[str, float] = field(default_factory=dict)
     price_version: str = "v1"
+    comparable: float | None = None
+    native: float | None = None
+    strength: float | None = None
 
 
 @runtime_checkable
@@ -84,6 +87,13 @@ class PriceRepository(Protocol):
 
 
 @runtime_checkable
+class AdjustedPriceRepository(Protocol):
+    def upsert_adjusted_prices(self, bars: list[PriceBar]) -> int: ...
+
+    def get_adjusted_prices(self, symbol: str) -> list[PriceBar]: ...
+
+
+@runtime_checkable
 class MacroRepository(Protocol):
     def put_macro(
         self,
@@ -107,9 +117,14 @@ class ScoreHistoryRepository(Protocol):
         score: float,
         subscores: dict[str, float],
         price_version: str,
+        comparable: float | None = None,
+        native: float | None = None,
+        strength: float | None = None,
     ) -> None: ...
 
     def get_scores(self, scope: str, symbol: str) -> list[ScoreRecord]: ...
+
+    def list_scores_ordered(self, scope: str, field: str) -> list[ScoreRecord]: ...
 
 
 @runtime_checkable
@@ -130,3 +145,12 @@ class ChipRepository(Protocol):
     def get_chip_range(
         self, start: dt.date, end: dt.date
     ) -> list[tuple[dt.date, dict]]: ...
+
+
+@runtime_checkable
+class StockChipRepository(Protocol):
+    def put_stock_chips(
+        self, date: dt.date, payloads: dict[str, dict], as_of: dt.datetime
+    ) -> None: ...
+
+    def get_stock_chips(self, date: dt.date, symbols: list[str]) -> dict[str, dict]: ...

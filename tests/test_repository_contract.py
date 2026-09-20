@@ -206,3 +206,49 @@ class TestChipRepository:
         assert repo.get_chips(dt.date(2026, 9, 4))["margin_lots"] == pytest.approx(
             8_902_986
         )
+
+
+class TestStockChipRepository:
+    def test_one_day_multiple_symbols_and_missing_values(self, repo):
+        day = dt.date(2026, 9, 18)
+        stamped = dt.datetime(2026, 9, 18, 18, 30)
+        repo.put_stock_chips(day, {
+            "2330.TW": {"total_net_shares": 1200.0},
+            "2308.TW": {"total_net_shares": None},
+        }, stamped)
+
+        got = repo.get_stock_chips(day, ["2330.TW", "2308.TW", "2317.TW"])
+
+        assert got["2330.TW"]["total_net_shares"] == 1200.0
+        assert got["2308.TW"]["total_net_shares"] is None
+        assert "2317.TW" not in got
+
+    def test_same_date_symbol_replaces_payload(self, repo):
+        day = dt.date(2026, 9, 18)
+        repo.put_stock_chips(day, {"2330.TW": {"total_net_shares": 1200.0}}, dt.datetime(2026, 9, 18, 18))
+        repo.put_stock_chips(day, {"2330.TW": {"total_net_shares": 1300.0}}, dt.datetime(2026, 9, 18, 19))
+
+        assert repo.get_stock_chips(day, ["2330.TW"])["2330.TW"]["total_net_shares"] == 1300.0
+
+
+class TestAdjustedPriceRepository:
+    def test_roundtrip_is_separate_from_raw_prices(self, repo):
+        original = bar("2026-09-18", 100.0)
+        adjusted = bar("2026-09-18", 99.0)
+        repo.upsert_prices([original])
+        repo.upsert_adjusted_prices([adjusted])
+
+        assert repo.get_prices("0050.TW")[0].close == 100.0
+        assert repo.get_adjusted_prices("0050.TW")[0].close == 99.0
+
+
+class TestSortableScoreColumns:
+    def test_comparable_native_strength_roundtrip_and_order(self, repo):
+        day = dt.date(2026, 9, 18)
+        repo.put_score("stock", "AAA", day, 50.0, {}, "v1", comparable=25.0, native=80.0, strength=30.0)
+        repo.put_score("stock", "BBB", day, 50.0, {}, "v1", comparable=75.0, native=20.0, strength=90.0)
+
+        assert repo.get_scores("stock", "AAA")[0].native == 80.0
+        assert [row.symbol for row in repo.list_scores_ordered("stock", "comparable")] == ["BBB", "AAA"]
+        assert [row.symbol for row in repo.list_scores_ordered("stock", "native")] == ["AAA", "BBB"]
+        assert [row.symbol for row in repo.list_scores_ordered("stock", "strength")] == ["BBB", "AAA"]

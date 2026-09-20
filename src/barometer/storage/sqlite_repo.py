@@ -33,6 +33,11 @@ class SqliteRepo:
 
     def init_schema(self) -> None:
         self.conn.executescript(_SCHEMA.read_text(encoding="utf-8"))
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(score_history)")}
+        for field in ("comparable", "native", "strength"):
+            if field not in existing:
+                self.conn.execute(f"ALTER TABLE score_history ADD COLUMN {field} REAL")
+            self.conn.execute(f"CREATE INDEX IF NOT EXISTS idx_score_{field} ON score_history (scope, {field})")
         self.conn.commit()
 
     def close(self) -> None:
@@ -107,6 +112,38 @@ class SqliteRepo:
             "SELECT MAX(date) AS d FROM price_daily WHERE symbol = ?", (symbol,)
         ).fetchone()
         return _as_date(row["d"] if row else None)
+
+    def upsert_adjusted_prices(self, bars: list[PriceBar]) -> int:
+        rows = [
+            (b.symbol, b.date.isoformat(), b.open, b.high, b.low, b.close,
+             b.volume_shares, b.source, b.as_of.isoformat(), int(b.stale))
+            for b in bars
+        ]
+        self.conn.executemany(
+            "INSERT INTO price_adjusted "
+            "(symbol,date,open,high,low,close,volume_shares,source,as_of,stale) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(symbol,date) DO UPDATE SET "
+            "open=excluded.open, high=excluded.high, low=excluded.low, "
+            "close=excluded.close, volume_shares=excluded.volume_shares, "
+            "source=excluded.source, as_of=excluded.as_of, stale=excluded.stale",
+            rows,
+        )
+        self.conn.commit()
+        return len(rows)
+
+    def get_adjusted_prices(self, symbol: str) -> list[PriceBar]:
+        return [
+            PriceBar(
+                symbol=row["symbol"], date=dt.date.fromisoformat(row["date"]),
+                open=row["open"], high=row["high"], low=row["low"], close=row["close"],
+                volume_shares=row["volume_shares"], source=row["source"],
+                as_of=dt.datetime.fromisoformat(row["as_of"]), stale=bool(row["stale"]),
+            )
+            for row in self.conn.execute(
+                "SELECT * FROM price_adjusted WHERE symbol = ? ORDER BY date", (symbol,)
+            )
+        ]
 
     def record_conflict(
         self,
@@ -183,13 +220,17 @@ class SqliteRepo:
         score: float,
         subscores: dict[str, float],
         price_version: str,
+        comparable: float | None = None,
+        native: float | None = None,
+        strength: float | None = None,
     ) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO score_history "
-            "(scope,symbol,as_of,score,subscores_json,price_version) "
-            "VALUES (?,?,?,?,?,?)",
+            "(scope,symbol,as_of,score,subscores_json,price_version,comparable,native,strength) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (scope, symbol, as_of.isoformat(), score,
-             json.dumps(subscores, ensure_ascii=False), price_version),
+             json.dumps(subscores, ensure_ascii=False), price_version,
+             comparable, native, strength),
         )
         self.conn.commit()
 
@@ -202,11 +243,29 @@ class SqliteRepo:
                 score=r["score"],
                 subscores=json.loads(r["subscores_json"]),
                 price_version=r["price_version"],
+                comparable=r["comparable"], native=r["native"], strength=r["strength"],
             )
             for r in self.conn.execute(
                 "SELECT * FROM score_history WHERE scope = ? AND symbol = ? "
                 "ORDER BY as_of",
                 (scope, symbol),
+            )
+        ]
+
+    def list_scores_ordered(self, scope: str, field: str) -> list[ScoreRecord]:
+        if field not in {"comparable", "native", "strength"}:
+            raise ValueError(f"Unsupported score sort field: {field}")
+        return [
+            ScoreRecord(
+                scope=row["scope"], symbol=row["symbol"],
+                as_of=dt.date.fromisoformat(row["as_of"]), score=row["score"],
+                subscores=json.loads(row["subscores_json"]),
+                price_version=row["price_version"],
+                comparable=row["comparable"], native=row["native"], strength=row["strength"],
+            )
+            for row in self.conn.execute(
+                f"SELECT * FROM score_history WHERE scope = ? ORDER BY {field} DESC, symbol",
+                (scope,),
             )
         ]
 
@@ -282,3 +341,24 @@ class SqliteRepo:
                 (start.isoformat(), end.isoformat()),
             )
         ]
+
+    def put_stock_chips(
+        self, date: dt.date, payloads: dict[str, dict], as_of: dt.datetime
+    ) -> None:
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO stock_chip_daily (date,symbol,payload_json,as_of) VALUES (?,?,?,?)",
+            [(date.isoformat(), symbol, json.dumps(payload, ensure_ascii=False), as_of.isoformat())
+             for symbol, payload in payloads.items()],
+        )
+        self.conn.commit()
+
+    def get_stock_chips(self, date: dt.date, symbols: list[str]) -> dict[str, dict]:
+        wanted = set(symbols)
+        return {
+            row["symbol"]: json.loads(row["payload_json"])
+            for row in self.conn.execute(
+                "SELECT symbol,payload_json FROM stock_chip_daily WHERE date = ?",
+                (date.isoformat(),),
+            )
+            if row["symbol"] in wanted
+        }
