@@ -16,6 +16,7 @@ import sys
 from barometer import config
 from barometer.datasources import eia_src, fred_src, tw_gov_src, yfinance_src
 from barometer.datasources.base import COUNTER, FetchError
+from barometer.domain import freshness
 from barometer.domain.macro_spec import ALL, SCORED, WORLD, TAIWAN
 from barometer.domain.ports import MacroSeries
 from barometer.domain.scoring_macro import ALERT_FUNCS, score_layer, summarize
@@ -92,9 +93,15 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
     try:
         for ind in ALL:
             cached: MacroSeries | None = repo.get_macro(ind.key)
+            cached_state = (
+                freshness.assess_source_series(
+                    ind.freq, cached.data_date, now.date(),
+                    [value for _, value in cached.series], key=ind.key,
+                ) if cached is not None else None
+            )
             if not force and cached is not None:
                 age_h = (now - cached.fetched_at).total_seconds() / 3600
-                if age_h < ind.ttl_hours:
+                if age_h < ind.ttl_hours and cached_state is not None and cached_state.usable:
                     results[ind.key] = {
                         "series": cached.series,
                         "data_date": cached.data_date,
@@ -107,6 +114,11 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
             try:
                 series = _fetch_one(ind)
                 dd = _data_date(series)
+                source_state = freshness.assess_source_series(
+                    ind.freq, dd, now.date(), [value for _, value in series], key=ind.key,
+                )
+                if not source_state.usable:
+                    raise FetchError(source_state.reason)
                 repo.put_macro(ind.key, series, fetched_at=now, data_date=dd)
                 results[ind.key] = {
                     "series": series, "data_date": dd,
@@ -122,17 +134,19 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
                           else f"{type(exc).__name__}: {exc}")
                 log.count("failed")
                 log.note(f"{ind.key}（{ind.name}）: {reason}")
-                if cached is not None:
+                if cached is not None and cached_state is not None and cached_state.usable:
                     results[ind.key] = {
                         "series": cached.series,
                         "data_date": cached.data_date,
                         "status": "stale",
-                        "note": f"更新失敗，顯示快取（{reason}）",
+                        "note": f"更新失敗，降級到較新快取（{reason}）",
                     }
                 else:
+                    if cached_state is not None and not cached_state.usable:
+                        reason = f"{reason}；快取也不可用（{cached_state.reason}）"
                     results[ind.key] = {
                         "series": [], "data_date": None,
-                        "status": "missing", "note": f"抓取失敗：{reason}",
+                        "status": "missing", "note": f"缺料：{reason}",
                     }
 
         # ---- 第一層：逐項警示判定 ----

@@ -16,7 +16,7 @@ import datetime as dt
 from barometer import config
 from barometer.datasources import yfinance_src
 from barometer.datasources.base import COUNTER, FetchError
-from barometer.domain import windows
+from barometer.domain import freshness, windows
 from barometer.domain.ports import PriceBar
 from barometer.domain.reconcile import compare_overlap
 from barometer.pipeline.runlog import RunLog
@@ -96,6 +96,24 @@ def run(
                 continue
 
             stored = csv_audit.read_current(symbol)
+            source_state = freshness.assess_source_series(
+                "每日", bars[-1].date if bars else None, run_date,
+                [bar.close for bar in bars], key=symbol,
+            )
+            if not source_state.usable:
+                log.count("frozen")
+                log.note(f"{symbol}: {source_state.reason}，來源未落地")
+                cached_state = freshness.assess_source_series(
+                    "每日", stored[-1].date if stored else None, run_date,
+                    [bar.close for bar in stored], key=symbol,
+                )
+                if cached_state.usable:
+                    final_bars[symbol] = stored
+                    log.note(f"{symbol}: 降級到本機較新序列（{stored[-1].date}）")
+                else:
+                    log.count("failed")
+                    log.note(f"{symbol}: 本機快取也不可用（{cached_state.reason}）")
+                continue
             cmp = compare_overlap(stored, bars)
             if cmp.suspect_adjust:
                 # §4.1：只記旗標，到此為止。重抓是手動的。
@@ -131,7 +149,7 @@ def run(
         _flag_missing_sessions(log, final_bars)
 
         log.quota["requests"] = COUNTER.snapshot()
-        status = "partial" if log.counts.get("failed") else "ok"
+        status = "partial" if log.counts.get("failed") or log.counts.get("frozen") else "ok"
         log.finish(status)
         repo.record_run(
             run_id=log.run_id, task=log.task, started_at=log.started_at,

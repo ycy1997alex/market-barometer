@@ -28,6 +28,7 @@ ON_TIME = "on_time"
 OVERDUE = "overdue"
 UNEXPECTED = "unexpected"
 NO_DATA = "no_data"
+FROZEN = "frozen"
 
 IRREGULAR = "不定期"
 
@@ -69,7 +70,33 @@ class Freshness:
 
     @property
     def needs_attention(self) -> bool:
-        return self.state in (OVERDUE, UNEXPECTED)
+        return self.state in (OVERDUE, UNEXPECTED, FROZEN)
+
+    @property
+    def usable(self) -> bool:
+        return self.state not in (NO_DATA, OVERDUE, FROZEN)
+
+
+def assess_source_series(
+    freq: str,
+    data_date: dt.date | None,
+    today: dt.date,
+    values: list[float | None],
+    key: str = "",
+) -> Freshness:
+    """Screen a returned series before it enters a score or fallback chain.
+
+    Calendar age applies to all regular frequencies. A daily series can also
+    freeze while its date labels keep advancing with identical values.
+    Irregular policy rates are exempt from both checks.
+    """
+    state = assess(freq, data_date, today, key=key)
+    if state.state == OVERDUE:
+        return Freshness(key, FROZEN, f"來源序列凍結：{state.reason}")
+    if (freq == "每日" and len(values) >= 6 and values[-1] is not None
+            and all(value == values[-1] for value in values[-6:])):
+        return Freshness(key, FROZEN, f"來源序列凍結：最後 6 筆值皆為 {values[-1]}")
+    return state
 
 
 def assess(

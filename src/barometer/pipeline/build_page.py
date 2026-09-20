@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as dt
 
 from barometer import config
-from barometer.domain import macro_spec, scoring_index
+from barometer.domain import freshness, macro_spec, scoring_index
 from barometer.domain.chips import reading as chip_reading
 from barometer.pipeline import run_scores
 from barometer.pipeline.runlog import read_runs
@@ -46,6 +46,18 @@ def _macro_rows(repo: SqliteRepo, indicators) -> list[Row]:
                     note=ind.note or "尚未抓取")
             )
             continue
+        state = freshness.assess_source_series(
+            ind.freq, cached.data_date, dt.date.today(),
+            [value for _, value in cached.series], key=ind.key,
+        )
+        if not state.usable:
+            note = "｜".join(part for part in (ind.note, state.reason) if part)
+            rows.append(Row(
+                label=ind.name, value=None,
+                data_date=(cached.data_date.isoformat() if cached.data_date else None),
+                freq=ind.freq, note=note,
+            ))
+            continue
         series = [(d, v) for d, v in cached.series]
         last = series[-1][1]
         note = ind.note
@@ -72,6 +84,17 @@ def _index_rows(symbols) -> list[Row]:
         if not bars:
             rows.append(Row(label=symbol, value=None, data_date=None,
                             note="本機沒有序列"))
+            continue
+
+        state = freshness.assess_source_series(
+            "每日", bars[-1].date, dt.date.today(),
+            [bar.close for bar in bars], key=symbol,
+        )
+        if not state.usable:
+            rows.append(Row(
+                label=symbol, value=None, data_date=bars[-1].date.isoformat(),
+                freq="每日", note=state.reason,
+            ))
             continue
 
         scored = run_scores.score_series(symbol, bars)

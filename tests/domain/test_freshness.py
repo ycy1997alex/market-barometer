@@ -166,6 +166,30 @@ def test_irregular_series_is_due_on_a_slow_cadence_not_never():
     assert freshness.is_due("不定期", D(2026, 8, 1), today=TODAY) is True
 
 
+def test_daily_source_stuck_two_months_ago_is_frozen_and_unusable():
+    result = freshness.assess_source_series(
+        "每日", D(2026, 7, 7), TODAY, [20.0, 21.0, 22.0], key="vix3m"
+    )
+    assert result.state == freshness.FROZEN
+    assert not result.usable
+    assert "2026-07-07" in result.reason
+
+
+def test_six_identical_daily_closes_are_frozen_even_when_dates_advance():
+    result = freshness.assess_source_series(
+        "每日", TODAY, TODAY, [47.16] * 6, key="0050.TW"
+    )
+    assert result.state == freshness.FROZEN
+    assert not result.usable
+
+
+def test_old_irregular_policy_rate_is_not_frozen():
+    result = freshness.assess_source_series(
+        "不定期", D(2024, 3, 22), TODAY, [1.875] * 6, key="cbc_rate"
+    )
+    assert result.usable
+
+
 def test_due_keys_picks_only_the_ones_that_need_fetching():
     rows = [
         ("t10y2y", "每日", D(2026, 9, 4)),

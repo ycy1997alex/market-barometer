@@ -23,6 +23,8 @@ import pytest
 from barometer.domain.ports import PriceBar
 from barometer.pipeline import run_scores, runlog
 
+RUN_DATE = dt.date(2026, 9, 8)
+
 
 @pytest.fixture
 def isolated_root(tmp_path, monkeypatch):
@@ -58,13 +60,13 @@ def _runs(started: dt.datetime | None = None) -> list[dict]:
 def test_short_history_still_raises(isolated_root, three_days):
     """先確認「大聲失敗」本身沒有被這次的修改弄不見。"""
     with pytest.raises(ValueError, match="0050.TW"):
-        run_scores.run(["0050.TW"])
+        run_scores.run(["0050.TW"], run_date=RUN_DATE)
 
 
 def test_failed_run_is_recorded_in_the_runlog(isolated_root, three_days):
     """中止的那一次也要在 runlog 裡看得到。"""
     with pytest.raises(ValueError):
-        run_scores.run(["0050.TW"], task="test_scores")
+        run_scores.run(["0050.TW"], task="test_scores", run_date=RUN_DATE)
 
     runs = _runs()
     assert len(runs) == 1, "失敗的執行沒有留下任何 runlog"
@@ -73,7 +75,7 @@ def test_failed_run_is_recorded_in_the_runlog(isolated_root, three_days):
 
 def test_failed_run_is_marked_error_not_ok(isolated_root, three_days):
     with pytest.raises(ValueError):
-        run_scores.run(["0050.TW"])
+        run_scores.run(["0050.TW"], run_date=RUN_DATE)
 
     assert _runs()[0]["status"] == "error"
 
@@ -81,7 +83,7 @@ def test_failed_run_is_marked_error_not_ok(isolated_root, three_days):
 def test_failed_run_records_why(isolated_root, three_days):
     """光知道「失敗了」不夠 —— runlog 要說出是哪一檔、為什麼。"""
     with pytest.raises(ValueError):
-        run_scores.run(["0050.TW"])
+        run_scores.run(["0050.TW"], run_date=RUN_DATE)
 
     notes = " ".join(_runs()[0]["notes"])
     assert "0050.TW" in notes
@@ -91,7 +93,7 @@ def test_failed_run_records_why(isolated_root, three_days):
 def test_failed_run_keeps_the_counts_it_got_to(isolated_root, three_days):
     """炸掉之前已經算完的部分要留著 —— 那是「跑到哪裡」的唯一線索。"""
     with pytest.raises(ValueError):
-        run_scores.run(["0050.TW"])
+        run_scores.run(["0050.TW"], run_date=RUN_DATE)
 
     counts = _runs()[0]["counts"]
     assert "scored::0050.TW" not in counts   # 這一檔沒走完
@@ -104,7 +106,7 @@ def test_successful_run_still_records_ok(isolated_root, monkeypatch):
         run_scores.csv_audit, "read_current",
         lambda symbol, **kw: _bars(symbol, 5),
     )
-    log = run_scores.run(["0050.TW"], task="test_ok")
+    log = run_scores.run(["0050.TW"], task="test_ok", run_date=RUN_DATE)
 
     assert log.status == "ok"
     runs = _runs()
@@ -114,6 +116,6 @@ def test_successful_run_still_records_ok(isolated_root, monkeypatch):
 def test_runlog_written_only_once_per_run(isolated_root, three_days):
     """重拋不得讓同一次執行被記兩筆。"""
     with pytest.raises(ValueError):
-        run_scores.run(["0050.TW"])
+        run_scores.run(["0050.TW"], run_date=RUN_DATE)
 
     assert len(_runs()) == 1
