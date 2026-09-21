@@ -16,6 +16,7 @@ K 線分批每批 ≤ 30 日曆日。
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 
 from barometer.datasources.base import COUNTER, FetchError, Throttle
 from barometer.domain.ports import PriceBar
@@ -28,6 +29,59 @@ _THROTTLE = Throttle(min_interval=0.3)
 MAX_BATCH_DAYS = 30  # K 線每批 ≤ 30 日曆日
 
 
+@dataclass(frozen=True, slots=True)
+class ContractInfo:
+    symbol: str
+    name: str
+    market: str
+    source: str
+    fetched_at: dt.datetime
+
+
+def _lookup_stock(api, code: str):
+    books = api.Contracts.Stocks
+    for market in ("TSE", "OTC"):
+        book = getattr(books, market, None)
+        if book is None:
+            continue
+        try:
+            found = book[code]
+        except (KeyError, IndexError):
+            found = None
+        if found is not None:
+            return found, market
+    try:
+        found = books[code]
+    except (KeyError, IndexError, TypeError):
+        found = None
+    return (found, str(getattr(found, "exchange", ""))) if found is not None else (None, None)
+
+
+def contract_info(
+    api, symbol: str, *, fallback_name: str = "",
+    fetched_at: dt.datetime | None = None,
+) -> ContractInfo:
+    """Get name and exchange from the contract directory; label fallback explicitly."""
+    stamp = fetched_at or dt.datetime.now()
+    code = symbol.removesuffix(".TW").removesuffix(".TWO")
+    if symbol == "^TWII":
+        try:
+            contract = api.Contracts.Indexs.TSE["001"]
+        except (AttributeError, KeyError, IndexError):
+            contract = None
+        market = "TSE"
+    else:
+        contract, market = _lookup_stock(api, code)
+    if contract is not None and getattr(contract, "name", None):
+        exchange = getattr(contract, "exchange", None) or market
+        return ContractInfo(symbol, str(contract.name),
+                            str(getattr(exchange, "value", exchange)),
+                            "shioaji", stamp)
+    fallback_market = "OTC" if symbol.endswith(".TWO") else "TSE"
+    return ContractInfo(symbol, fallback_name or code, fallback_market,
+                        "fallback", stamp)
+
+
 def _contract(api, symbol: str):
     """把本專案的代號對到 shioaji 合約。
 
@@ -37,7 +91,7 @@ def _contract(api, symbol: str):
     code = symbol.replace(".TW", "").replace(".TWO", "")
     if symbol == "^TWII":
         return api.Contracts.Indexs.TSE["001"]
-    stock = api.Contracts.Stocks[code]
+    stock, _ = _lookup_stock(api, code)
     if stock is None:
         raise FetchError(f"shioaji 找不到合約 {code}")
     return stock
