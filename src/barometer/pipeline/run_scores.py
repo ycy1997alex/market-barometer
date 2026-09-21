@@ -86,7 +86,7 @@ def run(
     symbols: list[str],
     task: str = "scores_index",
     window: int = WINDOW,
-    price_version: str = "v1",
+    price_version: str = "adjusted-v1",
     run_date: dt.date | None = None,
 ) -> RunLog:
     run_date = run_date or dt.date.today()
@@ -97,7 +97,7 @@ def run(
 
     try:
         for symbol in symbols:
-            bars = csv_audit.read_current(symbol)
+            bars = repo.get_adjusted_prices(symbol)
             if not bars:
                 log.count("no_data")
                 log.note(f"{symbol}: 本機沒有序列，跳過（不是 0 分，是沒有資料）")

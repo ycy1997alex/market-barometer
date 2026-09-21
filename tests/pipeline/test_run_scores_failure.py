@@ -22,6 +22,7 @@ import pytest
 
 from barometer.domain.ports import PriceBar
 from barometer.pipeline import run_scores, runlog
+from barometer.storage.sqlite_repo import SqliteRepo
 
 RUN_DATE = dt.date(2026, 9, 8)
 
@@ -44,12 +45,11 @@ def _bars(symbol: str, n: int) -> list[PriceBar]:
 
 
 @pytest.fixture
-def three_days(monkeypatch):
+def three_days(isolated_root):
     """本機只有 3 個交易日 —— 新上市或剛加進清單的標的就長這樣。"""
-    monkeypatch.setattr(
-        run_scores.csv_audit, "read_current",
-        lambda symbol, **kw: _bars(symbol, 3),
-    )
+    with SqliteRepo(isolated_root / "market.db") as repo:
+        repo.init_schema()
+        repo.upsert_adjusted_prices(_bars("0050.TW", 3))
 
 
 def _runs(started: dt.datetime | None = None) -> list[dict]:
@@ -100,12 +100,11 @@ def test_failed_run_keeps_the_counts_it_got_to(isolated_root, three_days):
     assert _runs()[0]["ended_at"] is not None
 
 
-def test_successful_run_still_records_ok(isolated_root, monkeypatch):
+def test_successful_run_still_records_ok(isolated_root):
     """修完之後，成功那條路不能跟著壞掉。"""
-    monkeypatch.setattr(
-        run_scores.csv_audit, "read_current",
-        lambda symbol, **kw: _bars(symbol, 5),
-    )
+    with SqliteRepo(isolated_root / "market.db") as repo:
+        repo.init_schema()
+        repo.upsert_adjusted_prices(_bars("0050.TW", 5))
     log = run_scores.run(["0050.TW"], task="test_ok", run_date=RUN_DATE)
 
     assert log.status == "ok"

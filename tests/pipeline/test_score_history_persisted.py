@@ -76,15 +76,16 @@ SESSIONS = _sessions()
 
 
 @pytest.fixture
-def one_year_of_sessions(monkeypatch):
-    def _read(symbol, **kw):
-        return [
+def one_year_of_sessions(isolated_root):
+    with SqliteRepo(config.db_path()) as repo:
+        repo.init_schema()
+        repo.upsert_adjusted_prices([
             PriceBar(symbol=symbol, date=d, open=100.0, high=101.0, low=99.0,
                      close=100.0 + i * 0.1, volume_shares=1000.0, source="test",
                      as_of=dt.datetime(2026, 9, 18, 18, 0, 0))
             for i, d in enumerate(SESSIONS)
-        ]
-    monkeypatch.setattr(run_scores.csv_audit, "read_current", _read)
+            for symbol in ("^TWII",)
+        ])
 
 
 def test_latest_session_reaches_score_history(isolated_root, one_year_of_sessions):
@@ -96,3 +97,4 @@ def test_latest_session_reaches_score_history(isolated_root, one_year_of_session
 
     assert got, "score_history 一列都沒有"
     assert max(r.as_of for r in got) == SESSIONS[-1]
+    assert all(r.price_version == "adjusted-v1" for r in got)

@@ -65,7 +65,9 @@ def test_score_pipeline_rejects_frozen_history_before_writing(monkeypatch, tmp_p
     monkeypatch.setenv("STOCKDATA_ROOT", str(tmp_path))
     first = dt.date(2026, 5, 1)
     old = [bar(first + dt.timedelta(days=day), 40 + day * 0.1) for day in range(60)]
-    monkeypatch.setattr(run_scores.csv_audit, "read_current", lambda _: old)
+    with SqliteRepo(tmp_path / "market.db") as repo:
+        repo.init_schema()
+        repo.upsert_adjusted_prices(old)
 
     with pytest.raises(ValueError, match="凍結"):
         run_scores.run(["0050.TW"], task="test_price_freeze")
