@@ -16,13 +16,39 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import math
+import re
 from dataclasses import dataclass
 
 import requests
 
 from barometer.datasources.base import COUNTER, FetchError, Throttle
+from barometer.domain.ports import PriceBar
 
 SOURCE = "twse"
+
+
+@dataclass(frozen=True, slots=True)
+class SplitNotice:
+    symbol: str
+    event_date: dt.date
+    ratio: float  # new units per old unit
+    url: str
+
+
+# Verified TWSE announcement. TWT49U does not contain this ETF split;
+# absence from that ex-rights table must not be treated as evidence of no split.
+_SPLIT_NOTICES = {
+    ("0050.TW", dt.date(2025, 6, 18)): SplitNotice(
+        "0050.TW", dt.date(2025, 6, 18), 4.0,
+        "https://wwwc.twse.com.tw/staticFiles/news/news/tsecnews/8a8216d696b406fc0196ce27c2e90063.pdf",
+    ),
+}
+
+
+def official_split_notice(symbol: str, event_date: dt.date) -> SplitNotice | None:
+    """Only return events backed by an inspected TWSE announcement."""
+    return _SPLIT_NOTICES.get((symbol, event_date))
 
 _T86 = ("https://www.twse.com.tw/fund/T86"
         "?response=csv&date={date:%Y%m%d}&selectType=ALL")
@@ -35,6 +61,8 @@ _UA = "market-barometer/0.1 (personal research; contact via GitHub)"
 # (dataset, 日期) → 結果，整檔快取（§6 規則 5）
 _CACHE: dict[tuple[str, str], list[dict]] = {}
 _MARGIN_CACHE: dict[str, "MarginReport"] = {}
+_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+_STOCK_DAY_ALL_CACHE: dict[dt.date, dict[str, PriceBar]] = {}
 
 
 class NotPublishedYet(FetchError):
@@ -62,6 +90,92 @@ def _num(s: str) -> float | None:
         return float(s)
     except ValueError:
         return None
+
+
+def _finite_num(value: object) -> float | None:
+    """TWSE empty, '--', and NaN are missing, never a fresh close."""
+    number = _num(str(value)) if value is not None else None
+    return number if number is not None and math.isfinite(number) else None
+
+
+def _roc_day(raw: object) -> dt.date:
+    digits = re.sub(r"\D", "", str(raw))
+    if len(digits) != 7:
+        raise ValueError(f"invalid TWSE ROC date: {raw!r}")
+    return dt.date(1911 + int(digits[:3]), int(digits[3:5]), int(digits[5:]))
+
+
+def parse_stock_day_all(
+    payload: list[dict], *, as_of: dt.datetime | None = None,
+) -> dict[str, PriceBar]:
+    """Select valid listed closes from the observed STOCK_DAY_ALL schema."""
+    fetched_at = as_of or dt.datetime.now()
+    out: dict[str, PriceBar] = {}
+    for row in payload:
+        code = str(row.get("Code", "")).strip()
+        close = _finite_num(row.get("ClosingPrice"))
+        if not code or close is None or close <= 0:
+            continue
+        try:
+            day = _roc_day(row.get("Date", ""))
+        except ValueError:
+            continue
+        symbol = f"{code}.TW"
+        out[symbol] = PriceBar(
+            symbol=symbol, date=day,
+            open=_finite_num(row.get("OpeningPrice")),
+            high=_finite_num(row.get("HighestPrice")),
+            low=_finite_num(row.get("LowestPrice")),
+            close=close,
+            volume_shares=_finite_num(row.get("TradeVolume")),
+            source="twse_stock_day_all", as_of=fetched_at,
+        )
+    return out
+
+
+def fetch_stock_day_all(run_date: dt.date | None = None) -> dict[str, PriceBar]:
+    """Fetch the entire listed market once per day, then select local symbols."""
+    run_date = run_date or dt.date.today()
+    if run_date in _STOCK_DAY_ALL_CACHE:
+        return _STOCK_DAY_ALL_CACHE[run_date]
+    _THROTTLE.wait()
+    COUNTER.bump(SOURCE)
+    try:
+        response = requests.get(
+            _STOCK_DAY_ALL_URL, timeout=30, headers={"User-Agent": _UA})
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise FetchError(f"TWSE STOCK_DAY_ALL: {exc}") from exc
+    if not isinstance(payload, list):
+        raise FetchError("TWSE STOCK_DAY_ALL: expected a list of rows")
+    rows = parse_stock_day_all(payload)
+    if not rows:
+        raise NotPublishedYet("TWSE STOCK_DAY_ALL: no valid listed closes yet")
+    _STOCK_DAY_ALL_CACHE[run_date] = rows
+    return rows
+
+
+def supplement_latest_close(
+    symbol: str, yahoo_bars: list[PriceBar], official: dict[str, PriceBar],
+) -> tuple[list[PriceBar], str]:
+    """Fill only a missing or stale latest listed session, preserving Yahoo history."""
+    if symbol.endswith(".TWO"):
+        return yahoo_bars, "otc_uncovered"
+    if not symbol.endswith(".TW"):
+        return yahoo_bars, "not_listed_stock"
+    twse_bar = official.get(symbol)
+    if twse_bar is None:
+        return yahoo_bars, "unavailable"
+    fresh = [bar for bar in yahoo_bars
+             if not bar.stale and bar.close is not None
+             and math.isfinite(bar.close) and bar.close > 0]
+    if fresh and fresh[-1].date >= twse_bar.date:
+        return yahoo_bars, "already_fresh"
+    merged = [bar for bar in yahoo_bars if bar.date != twse_bar.date]
+    merged.append(twse_bar)
+    merged.sort(key=lambda bar: bar.date)
+    return merged, "supplemented"
 
 
 def fetch_t86(date: dt.date) -> list[dict]:
