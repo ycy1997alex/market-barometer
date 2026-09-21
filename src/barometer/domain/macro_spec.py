@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime as dt
 
 # 快取 TTL（§7.3）
 TTL_MARKET_HOURS = 4    # yfinance
@@ -118,6 +119,39 @@ ALL: tuple[Indicator, ...] = WORLD + TAIWAN + OBSERVE
 BY_KEY: dict[str, Indicator] = {i.key: i for i in ALL}
 
 SCORED = WORLD + TAIWAN
+
+# Engineering release-lag assumptions for historical replay (§7.2). These are
+# conservative calendar-day offsets, not a claim about each actual release or
+# historical data vintage. Unknown series fail closed in available_series().
+PUBLISH_LAG_DAYS: dict[str, int] = {
+    "CPIAUCSL": 45, "UNRATE": 35, "PAYEMS": 35,
+    "ICSA": 5, "WALCL": 8,
+    "T10Y2Y": 1, "DFEDTARU": 1,
+    "GACDFSA066MSFRBPHI": 30,
+    "^VIX": 0, "DX-Y.NYB": 0, "^TNX": 0,
+    "TWD=X": 0, "^SOX": 0,
+    "6099": 45, "6799": 90, "lp-640": 1, "WPSR": 7,
+}
+
+
+def available_series(
+    series: list[tuple[str, float]], sid: str, as_of: dt.date,
+) -> list[tuple[str, float]]:
+    """Return only rows whose assumed publication date has arrived by as_of.
+
+    Series labels are observation dates. The caller must use the returned prefix
+    for *every* indicator calculation, including moving averages and changes.
+    """
+    lag = PUBLISH_LAG_DAYS[sid]
+    def period_start(label: str) -> dt.date:
+        if len(label) == 7 and label[4] == "-":
+            return dt.date.fromisoformat(label + "-01")
+        if len(label) == 6 and label[4] == "Q" and label[5] in "1234":
+            return dt.date(int(label[:4]), (int(label[5]) - 1) * 3 + 1, 1)
+        return dt.date.fromisoformat(label)
+
+    return [(label, value) for label, value in series
+            if period_start(label) + dt.timedelta(days=lag) <= as_of]
 
 
 def light_name(score: float) -> str:
