@@ -94,6 +94,7 @@ def fetch_daily(
     period: str = "1y",
     auto_adjust: bool = False,
     as_of: dt.datetime | None = None,
+    start: dt.date | None = None,
 ) -> list[PriceBar]:
     """抓一檔的日線。
 
@@ -107,9 +108,12 @@ def fetch_daily(
     as_of = as_of or dt.datetime.now()
 
     try:
-        df = yf.Ticker(symbol).history(
-            period=period, interval="1d", auto_adjust=auto_adjust
-        )
+        options = {"interval": "1d", "auto_adjust": auto_adjust}
+        if start is not None:
+            options["start"] = start.isoformat()
+        else:
+            options["period"] = period
+        df = yf.Ticker(symbol).history(**options)
     except Exception as exc:  # noqa: BLE001 — 任何失敗都只讓這一檔 stale
         raise FetchError(f"{symbol}: yfinance 抓取失敗 — {exc}") from exc
 

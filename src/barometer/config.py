@@ -52,7 +52,7 @@ def price_raw_path(date_iso: str) -> Path:
 
 
 def price_current_dir() -> Path:
-    """最新完整序列，允許被覆寫，計算用。"""
+    """最新未還原序列，用於比對與顯示；指標使用 SQLite price_adjusted。"""
     return stockdata_root() / "price_current"
 
 
@@ -92,6 +92,17 @@ US_ETFS = ("SPY", "VOO")
 TW_SYMBOLS = (TW_INDEX,) + TW_ETFS
 US_SYMBOLS = (US_INDEX,) + US_ETFS
 ALL_SYMBOLS = TW_SYMBOLS + US_SYMBOLS
+
+# The last N observed trading sessions remain revisable after publication.
+PRICE_REVISABLE_SESSIONS = 5
+PRICE_CACHE_TTL_SECONDS = 3600
+
+TW_CONTRACT_FALLBACK_NAMES = {
+    "^TWII": "發行量加權股價指數", "0050.TW": "元大台灣50",
+    "006208.TW": "富邦台50", "2330.TW": "台積電",
+    "2454.TW": "聯發科", "2308.TW": "台達電",
+    "2317.TW": "鴻海", "3711.TW": "日月光投控",
+}
 
 # 顯示單位：台股「張」、美股「股」。內部一律存股，只在顯示層換算（§1 第 10 條）。
 SHARES_PER_LOT = 1000

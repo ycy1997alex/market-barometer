@@ -73,6 +73,10 @@ class Notifier:
         ok, err = self._external(title, body)
         return NotifyResult(recorded=recorded, external_ok=ok, external_error=err)
 
+    def record_local(self, title: str, body: str, severity: str = "warning") -> bool:
+        """Write the visible local alert without invoking an external command."""
+        return self._record(title, body, severity)
+
     def clear(self) -> None:
         """問題排除之後把顯眼的那個拿掉。**歷史留著**，不然就沒有紀錄可回顧。"""
         try:

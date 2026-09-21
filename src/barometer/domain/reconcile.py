@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass, field
 
 from barometer.domain.ports import PriceBar
@@ -22,6 +23,32 @@ VOLUME_TOLERANCE = 0.01   # 成交量相對差 1%
 _NOISE = 1e-6
 
 PRICE_FIELDS = ("open", "high", "low", "close")
+
+
+@dataclass(frozen=True, slots=True)
+class SplitStep:
+    event_date: dt.date
+    price_ratio: float
+    rows_affected: int
+
+
+def detect_split_step(stored: list[PriceBar], fetched: list[PriceBar]) -> SplitStep | None:
+    """Find an older constant-ratio segment followed by unchanged closes."""
+    old = {bar.date: bar for bar in stored if bar.close and not bar.stale}
+    pairs = [(bar.date, bar.close / old[bar.date].close)
+             for bar in fetched if bar.date in old and bar.close and not bar.stale]
+    pairs.sort()
+    if len(pairs) < 4:
+        return None
+    for cut in range(2, len(pairs) - 1):
+        before, after = pairs[:cut], pairs[cut:]
+        ratio = before[0][1]
+        if not (ratio > 1.2 or ratio < 0.8):
+            continue
+        if all(math.isclose(value, ratio, rel_tol=0.01) for _, value in before) and \
+           all(math.isclose(value, 1.0, rel_tol=0.001) for _, value in after):
+            return SplitStep(after[0][0], ratio, len(before))
+    return None
 
 
 @dataclass(frozen=True, slots=True)

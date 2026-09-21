@@ -38,14 +38,14 @@
 | 表 | 一列代表 | 主鍵 | 誰寫的 |
 |---|---|---|---|
 | `price_daily` | 一檔標的的一根日 K | (symbol, date) | `pipeline/fetch_prices.py` |
-| `price_conflict` | 一次 shioaji × yfinance 對不上 | (symbol, date, field, as_of) | `tools/crosscheck_tw.py` |
+| `price_conflict` | Shioaji 對帳差異或近期價格修訂；近期修訂另存 `old_value` / `new_value` | (symbol, date, field, as_of) | `tools/crosscheck_tw.py`、`pipeline/fetch_prices.py` |
 | `macro_cache` | 一條總經序列的最新快取 | key | `pipeline/run_macro.py` |
 | `chip_daily` | 一天的市場級籌碼面 | date | `pipeline/run_chips.py` |
 | `score_history` | 一個標的某一天的分數 | (scope, symbol, as_of) | `pipeline/run_scores.py` |
-| `adjustment_event` | 一次手動重抓 | (symbol, detected_at) | `tools/refetch.py` |
+| `adjustment_event` | 一次手動重抓或證交所公告確認的分割旗標 | (symbol, detected_at) | `tools/refetch.py`、`pipeline/fetch_prices.py` |
 | `run_log` | 一次執行 | run_id | 每一支 pipeline |
 | `stock_chip_daily` | 一天一檔的 T86 法人買賣超，缺值記 `null` | (date, symbol) | `research/datasources/chips_tw.py` |
-| `price_adjusted` | 一檔標的的一根還原日 K | (symbol, date) | 後續 4-2 調整管線 |
+| `price_adjusted` | 一檔標的的一根完整 OHLC 還原日 K，指標計算用，不進 `price_raw` | (symbol, date) | `pipeline/fetch_prices.py` |
 | `tw_stock_daily` | 一天一檔的官方 A/E/F/G/H 原始欄位 | (date, symbol) | 後續 3-1、3-5～3-7 |
 | `tw_market_daily` | 一天的官方 B 漲跌家數 | date | 後續 3-2 |
 | `tw_stock_weekly` | 一週一檔的 TDCC D 股權分散 | (date, symbol) | 後續 3-4 |
@@ -101,11 +101,9 @@
 
 - `price_raw\<YYYY-MM-DD>.jsonl.gz` —— 當天所有標的的抓取結果寫進同一個 gzip JSONL；同一天重跑會附加 gzip member，不覆寫舊紀錄。每列仍有 `symbol`, `date`, OHLCV, `source`, `as_of`, `stale`，是來源改寫歷史時的稽核對照。
 - `csv_audit.read_raw(date)` 會同時讀新格式與尚未搬移的 `price_raw\<YYYY-MM-DD>\<symbol>.csv`。`tools/migrate_price_raw.py` 先寫暫存 gzip、逐列驗證，再替換目的檔與刪除已轉換的 CSV。2026-09-20 已將 222 個舊 CSV 的 66,520 列轉成 12 個每日檔，逐列與 `price_raw_legacy_20260920.zip` 原檔備份比對相同。
-- `price_current\<symbol>.csv` —— 最新完整序列，計算用。**合併寫入，不是整份覆寫**：
-  同一天的以這次抓回來的為準，來源這次沒回、本機已有的日期留著（2026-09-18 起）。
-  yfinance 回 `0050.TW`、`006208.TW` 時固定漏掉前一個交易日，整份覆寫會在這裡挖出
-  一個洞，而 SQLite 那份（upsert 累積）沒有 —— 偏偏 `build_page` 讀的是這一份。
-  整條覆寫只留給 `tools/refetch.py`（`write_current(..., replace=True)`）。
+- `price_current\<symbol>.csv` —— 最新未還原序列，供比對與頁面來源標註使用；有變才合併寫入，近 `config.PRICE_REVISABLE_SESSIONS` 個交易日可更新，較早的差異僅記旗標；本機獨有的日期保留，整條覆寫只留給手動 `tools/refetch.py`。
+- `price_current\.cache_meta.json` —— `CachedSource` 只存版本與最近檢查時間，不另存一份價格；TTL 內直接讀既有 `price_current` 與 SQLite `price_adjusted`，到期由最後交易日起重疊 7 個日曆日抓尾段，還原序列的重疊段若變動則重抓整段以涵蓋除息重估。
+- 美股的當日日 K 在紐約時間 16:30 前視為盤中暫定列，不落地至 `price_current`、`price_daily` 或 `price_adjusted`；不維護假日日曆，Yahoo 未回傳的交易日保持缺資料。
 
 `^TWII` 這種代號會被存成 `IDX_TWII.csv`（`csv_audit._safe_name`）。
 

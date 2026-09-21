@@ -15,6 +15,18 @@
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
+
+
+def latest_complete_us_date(now_utc: dt.datetime | None = None) -> dt.date:
+    """NYSE daily bars are provisional until 16:30 New York time."""
+    moment = now_utc or dt.datetime.now(dt.timezone.utc)
+    if moment.tzinfo is None:
+        raise ValueError("now_utc must be timezone-aware")
+    local = moment.astimezone(ZoneInfo("America/New_York"))
+    if local.time() < dt.time(16, 30):
+        return local.date() - dt.timedelta(days=1)
+    return local.date()
 
 
 def last_n_sessions(dates: list[dt.date], n: int = 5) -> list[dt.date]:

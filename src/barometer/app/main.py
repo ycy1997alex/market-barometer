@@ -61,7 +61,7 @@ def _refresher(force: bool = False) -> None:
     # 強制重抓才連價格與評分一起更新。任何一段失敗都不該讓整次更新爆掉 ——
     # 總經已經抓好了，沒有理由因為價格抓不到就把它一起丟掉。
     try:
-        fetch_prices.run(list(config.ALL_SYMBOLS), task="app_force_prices")
+        fetch_prices.run(list(config.ALL_SYMBOLS), task="app_force_prices", force=True)
         run_scores.run(list(config.ALL_SYMBOLS), task="app_force_scores")
     except Exception:  # noqa: BLE001
         pass
