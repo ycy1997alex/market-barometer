@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS price_conflict (
     field         TEXT NOT NULL,
     shioaji_value REAL,
     yf_value      REAL,
+    old_value     REAL,                   -- 4-2: stored value before a revision
+    new_value     REAL,                   -- 4-2: freshly fetched value
     taken         TEXT NOT NULL,
     as_of         TEXT NOT NULL,
     PRIMARY KEY (symbol, date, field, as_of)
@@ -31,7 +33,8 @@ CREATE TABLE IF NOT EXISTS macro_cache (
     series_json  TEXT NOT NULL,
     fetched_at   TEXT NOT NULL,
     data_date    TEXT,
-    stale_reason TEXT
+    stale_reason TEXT,
+    source       TEXT NOT NULL DEFAULT '未記錄'
 );
 
 CREATE TABLE IF NOT EXISTS score_history (

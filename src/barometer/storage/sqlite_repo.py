@@ -33,6 +33,13 @@ class SqliteRepo:
 
     def init_schema(self) -> None:
         self.conn.executescript(_SCHEMA.read_text(encoding="utf-8"))
+        macro_columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(macro_cache)")}
+        if "source" not in macro_columns:
+            self.conn.execute("ALTER TABLE macro_cache ADD COLUMN source TEXT NOT NULL DEFAULT '未記錄'")
+        conflict_columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(price_conflict)")}
+        for field in ("old_value", "new_value"):
+            if field not in conflict_columns:
+                self.conn.execute(f"ALTER TABLE price_conflict ADD COLUMN {field} REAL")
         existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(score_history)")}
         for field in ("comparable", "native", "strength"):
             if field not in existing:
@@ -154,13 +161,15 @@ class SqliteRepo:
         yf_value: float | None,
         taken: str,
         as_of: dt.datetime,
+        old_value: float | None = None,
+        new_value: float | None = None,
     ) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO price_conflict "
-            "(symbol,date,field,shioaji_value,yf_value,taken,as_of) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "(symbol,date,field,shioaji_value,yf_value,taken,as_of,old_value,new_value) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (symbol, date.isoformat(), field, shioaji_value, yf_value,
-             taken, as_of.isoformat()),
+             taken, as_of.isoformat(), old_value, new_value),
         )
         self.conn.commit()
 
@@ -182,16 +191,18 @@ class SqliteRepo:
         fetched_at: dt.datetime,
         data_date: dt.date | None,
         stale_reason: str | None = None,
+        source: str = "未記錄",
     ) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO macro_cache "
-            "(key,series_json,fetched_at,data_date,stale_reason) VALUES (?,?,?,?,?)",
+            "(key,series_json,fetched_at,data_date,stale_reason,source) VALUES (?,?,?,?,?,?)",
             (
                 key,
                 json.dumps(series, ensure_ascii=False),
                 fetched_at.isoformat(),
                 data_date.isoformat() if data_date else None,
                 stale_reason,
+                source,
             ),
         )
         self.conn.commit()
@@ -208,6 +219,7 @@ class SqliteRepo:
             fetched_at=dt.datetime.fromisoformat(row["fetched_at"]),
             data_date=_as_date(row["data_date"]),
             stale_reason=row["stale_reason"],
+            source=row["source"],
         )
 
     # ---------------- ScoreHistoryRepository ----------------

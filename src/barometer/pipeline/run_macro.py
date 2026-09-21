@@ -17,9 +17,10 @@ from barometer import config
 from barometer.datasources import eia_src, fred_src, tw_gov_src, yfinance_src
 from barometer.datasources.base import COUNTER, FetchError
 from barometer.domain import freshness
+from barometer.domain.coverage import Coverage
 from barometer.domain.macro_spec import ALL, SCORED, WORLD, TAIWAN
 from barometer.domain.ports import MacroSeries
-from barometer.domain.scoring_macro import ALERT_FUNCS, score_layer, summarize
+from barometer.domain.scoring_macro import ALERT_FUNCS, INSUFFICIENT, score_layer, summarize
 from barometer.pipeline.runlog import RunLog
 from barometer.storage.sqlite_repo import SqliteRepo
 
@@ -105,6 +106,8 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
                     results[ind.key] = {
                         "series": cached.series,
                         "data_date": cached.data_date,
+                        "source": cached.source,
+                        "fetched_at": cached.fetched_at,
                         "status": "cached",
                         "note": f"快取（{age_h:.1f} 小時前）",
                     }
@@ -119,9 +122,11 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
                 )
                 if not source_state.usable:
                     raise FetchError(source_state.reason)
-                repo.put_macro(ind.key, series, fetched_at=now, data_date=dd)
+                repo.put_macro(ind.key, series, fetched_at=now, data_date=dd,
+                               source=ind.source)
                 results[ind.key] = {
                     "series": series, "data_date": dd,
+                    "source": ind.source, "fetched_at": now,
                     "status": "fresh", "note": "",
                 }
                 log.count("fetched")
@@ -138,6 +143,8 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
                     results[ind.key] = {
                         "series": cached.series,
                         "data_date": cached.data_date,
+                        "source": cached.source,
+                        "fetched_at": cached.fetched_at,
                         "status": "stale",
                         "note": f"更新失敗，降級到較新快取（{reason}）",
                     }
@@ -146,6 +153,7 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
                         reason = f"{reason}；快取也不可用（{cached_state.reason}）"
                     results[ind.key] = {
                         "series": [], "data_date": None,
+                        "source": None, "fetched_at": None,
                         "status": "missing", "note": f"缺料：{reason}",
                     }
 
@@ -155,7 +163,10 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
             series = results[ind.key]["series"]
             if not series:
                 continue  # 沒有值的指標不計入該層（權重自動正規化）
-            verdicts[ind.key] = ALERT_FUNCS[ind.key](series)
+            verdict = ALERT_FUNCS[ind.key](series)
+            if verdict[1] == INSUFFICIENT:
+                continue
+            verdicts[ind.key] = verdict
 
         # ---- 第二層：層別評分 ----
         world = score_layer(
@@ -165,6 +176,8 @@ def run(force: bool = False) -> tuple[RunLog, dict]:
             {i.key: verdicts[i.key][0] for i in TAIWAN if i.key in verdicts}
         )
         summary = summarize(world, taiwan)
+        summary["world_coverage"] = Coverage(world.valid, len(WORLD))
+        summary["taiwan_coverage"] = Coverage(taiwan.valid, len(TAIWAN))
 
         for scope, layer in (("macro_world", world), ("macro_tw", taiwan)):
             if layer.score is not None:

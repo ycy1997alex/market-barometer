@@ -44,6 +44,7 @@ class MacroSeries:
     fetched_at: dt.datetime
     data_date: dt.date | None
     stale_reason: str | None = None
+    source: str = "未記錄"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,8 @@ class PriceRepository(Protocol):
         yf_value: float | None,
         taken: str,
         as_of: dt.datetime,
+        old_value: float | None = None,
+        new_value: float | None = None,
     ) -> None: ...
 
     def get_conflicts(self, date: dt.date) -> list[dict]: ...
@@ -102,6 +105,7 @@ class MacroRepository(Protocol):
         fetched_at: dt.datetime,
         data_date: dt.date | None,
         stale_reason: str | None = None,
+        source: str = "未記錄",
     ) -> None: ...
 
     def get_macro(self, key: str) -> MacroSeries | None: ...

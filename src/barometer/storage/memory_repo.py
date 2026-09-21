@@ -68,6 +68,8 @@ class InMemoryRepo:
         yf_value: float | None,
         taken: str,
         as_of: dt.datetime,
+        old_value: float | None = None,
+        new_value: float | None = None,
     ) -> None:
         self._conflicts.append(
             {
@@ -78,6 +80,8 @@ class InMemoryRepo:
                 "yf_value": yf_value,
                 "taken": taken,
                 "as_of": as_of.isoformat(),
+                "old_value": old_value,
+                "new_value": new_value,
             }
         )
 
@@ -94,6 +98,7 @@ class InMemoryRepo:
         fetched_at: dt.datetime,
         data_date: dt.date | None,
         stale_reason: str | None = None,
+        source: str = "未記錄",
     ) -> None:
         self._macro[key] = MacroSeries(
             key=key,
@@ -101,6 +106,7 @@ class InMemoryRepo:
             fetched_at=fetched_at,
             data_date=data_date,
             stale_reason=stale_reason,
+            source=source,
         )
 
     def get_macro(self, key: str) -> MacroSeries | None:

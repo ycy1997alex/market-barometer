@@ -14,7 +14,8 @@ from __future__ import annotations
 import datetime as dt
 
 from barometer import config
-from barometer.domain import freshness, macro_spec, scoring_index
+from barometer.domain import freshness, macro_spec, scoring_index, scoring_macro
+from barometer.domain.coverage import Coverage
 from barometer.domain.chips import reading as chip_reading
 from barometer.pipeline import run_scores
 from barometer.pipeline.runlog import read_runs
@@ -23,7 +24,7 @@ from barometer.storage import csv_audit
 from barometer.storage.sqlite_repo import SqliteRepo
 
 WORLD_INTRO = (
-    "八項進評分。黃金、原油、匯率、比特幣只顯示不評分，"
+    f"{len(macro_spec.WORLD)} 項進評分。黃金、原油、匯率、比特幣只顯示不評分，"
     "不進評分的就只是名詞解釋，不假裝它有份量。"
 )
 TW_INTRO = (
@@ -56,6 +57,8 @@ def _macro_rows(repo: SqliteRepo, indicators) -> list[Row]:
                 label=ind.name, value=None,
                 data_date=(cached.data_date.isoformat() if cached.data_date else None),
                 freq=ind.freq, note=note,
+                source=cached.source,
+                fetched_at=cached.fetched_at.strftime("%Y-%m-%d %H:%M"),
             ))
             continue
         series = [(d, v) for d, v in cached.series]
@@ -72,12 +75,42 @@ def _macro_rows(repo: SqliteRepo, indicators) -> list[Row]:
                 freq=ind.freq,
                 series=series[-30:],
                 note=note,
+                source=cached.source,
+                fetched_at=cached.fetched_at.strftime("%Y-%m-%d %H:%M"),
             )
         )
     return rows
 
 
+def _macro_coverage(repo: SqliteRepo, indicators) -> Coverage:
+    valid = 0
+    today = dt.date.today()
+    for ind in indicators:
+        cached = repo.get_macro(ind.key)
+        if cached is None or not cached.series:
+            continue
+        state = freshness.assess_source_series(
+            ind.freq, cached.data_date, today,
+            [value for _, value in cached.series], key=ind.key)
+        if not state.usable:
+            continue
+        _, reason = scoring_macro.ALERT_FUNCS[ind.key](cached.series)
+        if reason != scoring_macro.INSUFFICIENT:
+            valid += 1
+    return Coverage(valid, len(indicators))
+
+
 def _index_rows(symbols) -> list[Row]:
+    rows: list[Row] = []
+    repo = SqliteRepo(config.db_path())
+    repo.init_schema()
+    try:
+        return _index_rows_from_repo(symbols, repo)
+    finally:
+        repo.close()
+
+
+def _index_rows_from_repo(symbols, repo: SqliteRepo) -> list[Row]:
     rows: list[Row] = []
     for symbol in symbols:
         bars = csv_audit.read_current(symbol)
@@ -94,10 +127,21 @@ def _index_rows(symbols) -> list[Row]:
             rows.append(Row(
                 label=symbol, value=None, data_date=bars[-1].date.isoformat(),
                 freq="每日", note=state.reason,
+                source=bars[-1].source,
+                fetched_at=bars[-1].as_of.strftime("%Y-%m-%d %H:%M"),
             ))
             continue
 
-        scored = run_scores.score_series(symbol, bars)
+        adjusted = repo.get_adjusted_prices(symbol)
+        if not adjusted or adjusted[-1].date < bars[-1].date:
+            rows.append(Row(
+                label=symbol, value=None, data_date=bars[-1].date.isoformat(),
+                freq="每日", note="還原序列資料不足，無法計分",
+                source=bars[-1].source,
+                fetched_at=bars[-1].as_of.strftime("%Y-%m-%d %H:%M"),
+            ))
+            continue
+        scored = run_scores.score_series(symbol, adjusted)
         summary = run_scores.summarize_window(scored)
         latest_date, latest = scored[-1]
 
@@ -121,6 +165,10 @@ def _index_rows(symbols) -> list[Row]:
                 change=(f"五日加權 {wavg:.1f}（{latest.valid} 個維度）"
                         if wavg is not None else None),
                 note="｜".join(n for n in notes if n),
+                coverage=latest.coverage,
+                coverage_name="技術面",
+                source=bars[-1].source,
+                fetched_at=bars[-1].as_of.strftime("%Y-%m-%d %H:%M"),
             )
         )
     return rows
@@ -132,12 +180,20 @@ def build_tabs() -> list[Tab]:
     try:
         world = _macro_rows(repo, macro_spec.WORLD + macro_spec.OBSERVE)
         taiwan = _macro_rows(repo, macro_spec.TAIWAN)
+        world_coverage = _macro_coverage(repo, macro_spec.WORLD)
+        taiwan_coverage = _macro_coverage(repo, macro_spec.TAIWAN)
     finally:
         repo.close()
 
     return [
-        Tab(key="world", title="世界總體經濟", rows=world, intro=WORLD_INTRO),
-        Tab(key="tw", title="台灣總體經濟", rows=taiwan, intro=TW_INTRO),
+        Tab(key="world", title="世界總體經濟", rows=world,
+            intro=f"{world_coverage.label('世界層')}"
+                  f"{'｜低涵蓋・分數降級' if world_coverage.degraded else ''}｜{WORLD_INTRO}",
+            coverage=world_coverage),
+        Tab(key="tw", title="台灣總體經濟", rows=taiwan,
+            intro=f"{taiwan_coverage.label('台灣層')}"
+                  f"{'｜低涵蓋・分數降級' if taiwan_coverage.degraded else ''}｜{TW_INTRO}",
+            coverage=taiwan_coverage),
         Tab(key="tw_index", title="台股大盤與 ETF",
             rows=_index_rows(config.TW_SYMBOLS), intro=INDEX_INTRO),
         Tab(key="us_index", title="美股大盤與 ETF",

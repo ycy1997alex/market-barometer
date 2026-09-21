@@ -31,7 +31,8 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
-from barometer.domain import freshness, macro_spec, weighting
+from barometer.domain import freshness, macro_spec, scoring_macro, weighting
+from barometer.domain.coverage import Coverage
 from barometer.domain.ports import MacroRepository, ScoreHistoryRepository
 
 
@@ -164,7 +165,10 @@ class DashboardPresenter:
             note = (f"五日加權 {wavg:.1f}" if wavg is not None
                     else f"五日加權：資料不足（{len(recent)}/{WINDOW} 天）")
             note += "｜警示：" + ("、".join(alerts) if alerts else "無")
-            note += f"｜{len(latest.subscores)} 個維度"
+            coverage = Coverage(len(latest.subscores), len(DIMENSION_NAMES))
+            note += f"｜{coverage.label('技術面')}"
+            if coverage.degraded:
+                note += "｜低涵蓋・降級"
 
             rows.append(
                 ViewRow(
@@ -195,8 +199,32 @@ class DashboardPresenter:
                     n += 1
         if not dates:
             return "尚無快取 —— 按「更新」抓一次"
-        return (f"{n} 條序列，資料日期 {len(dates)} 種："
+        world = self._macro_coverage(macro_spec.WORLD)
+        taiwan = self._macro_coverage(macro_spec.TAIWAN)
+        coverage = "｜".join(
+            c.label(label) + ("，低涵蓋・降級" if c.degraded else "")
+            for label, c in (("世界層", world), ("台灣層", taiwan))
+        )
+        # Put the downgrade first: long lists of source dates can be clipped
+        # by the desktop status bar even though every row shows its own date.
+        return (f"{n} 條序列｜{coverage}｜資料日期 {len(dates)} 種："
                 + "、".join(sorted(dates)))
+
+    def _macro_coverage(self, indicators) -> Coverage:
+        valid = 0
+        for ind in indicators:
+            cached = self._repo.get_macro(ind.key)
+            if cached is None or not cached.series:
+                continue
+            state = freshness.assess_source_series(
+                ind.freq, cached.data_date, self._now(),
+                [value for _, value in cached.series], key=ind.key)
+            if not state.usable:
+                continue
+            _, reason = scoring_macro.ALERT_FUNCS[ind.key](cached.series)
+            if reason != scoring_macro.INSUFFICIENT:
+                valid += 1
+        return Coverage(valid, len(indicators))
 
     # ---------------- 到期判定 ----------------
 

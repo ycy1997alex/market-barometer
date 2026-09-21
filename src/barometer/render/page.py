@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from html import escape
 
+from barometer.domain.coverage import Coverage
 from barometer.render import lint, svg
 
 
@@ -48,6 +49,11 @@ class Row:
     series: list[tuple[str, float | None]] = field(default_factory=list)
     note: str = ""
     change: str | None = None
+    source: str = ""
+    fetched_at: str | None = None
+    coverage: Coverage | None = None
+    coverage_name: str = "涵蓋率"
+    fundamental_coverage: Coverage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +62,7 @@ class Tab:
     title: str
     rows: list[Row] = field(default_factory=list)
     intro: str = ""
+    coverage: Coverage | None = None
 
 
 _STYLE = """
@@ -83,7 +90,9 @@ th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);
 th{color:var(--muted);font-weight:400;font-size:12px}
 td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.date{color:var(--muted);font-size:12px;white-space:nowrap}
+td.source,td.fetched{color:var(--muted);font-size:12px;white-space:nowrap}
 .note{color:var(--muted);font-size:11.5px;display:block;margin-top:2px}
+.coverage-low{color:var(--warn);font-weight:700;display:block}
 .spark .line{stroke:var(--accent);stroke-width:1.4;fill:none}
 .spark .pt{fill:var(--accent)}
 .spark .no-data{fill:var(--muted);font-size:11px}
@@ -125,16 +134,27 @@ FETCH_FOOTNOTE = (
 
 def _row_html(r: Row) -> str:
     value = escape(r.value) if r.value else "—"
+    coverage = ""
+    if r.coverage is not None:
+        label = escape(r.coverage.label(r.coverage_name))
+        badge = "低涵蓋・降級｜" if r.coverage.degraded else ""
+        css = ' class="coverage-low"' if r.coverage.degraded else ' class="note"'
+        coverage = f"<span{css}>{badge}{label}</span>"
+    if r.fundamental_coverage is not None:
+        coverage += (f'<span class="note">'
+                     f'{escape(r.fundamental_coverage.label("基本面"))}</span>')
     change = f'<span class="note">{escape(r.change)}</span>' if r.change else ""
     note = f'<span class="note">{escape(r.note)}</span>' if r.note else ""
     spark = svg.sparkline(r.series, freq=r.freq, label=r.label) if r.series else ""
     return (
         "<tr>"
         f"<td>{escape(r.label)}{note}</td>"
-        f'<td class="num">{value}{change}</td>'
+        f'<td class="num">{value}{coverage}{change}</td>'
         f"<td>{spark}</td>"
+        f'<td class="source">{escape(r.source or "—")}</td>'
         f'<td class="date">{escape(r.data_date or "—")}'
         f'<span class="note">{escape(r.freq)}</span></td>'
+        f'<td class="fetched">{escape(r.fetched_at or "—")}</td>'
         "</tr>"
     )
 
@@ -148,7 +168,7 @@ def _tab_html(t: Tab, active: bool) -> str:
         f"{intro}"
         f'<div class="scroll"><table>'
         f"<thead><tr><th>指標</th><th>最新值</th><th>走勢</th>"
-        f"<th>資料日期／頻率</th></tr></thead>"
+        f"<th>來源</th><th>資料日期／頻率</th><th>取得時間</th></tr></thead>"
         f"<tbody>{rows}</tbody></table></div>"
         f"</section>"
     )

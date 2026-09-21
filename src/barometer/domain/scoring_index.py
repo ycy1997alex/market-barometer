@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from barometer.domain.coverage import Coverage
+
 from barometer.domain.indicators import (
     annualised_volatility,
     bollinger_position,
@@ -211,12 +213,18 @@ class IndexScore:
     alert_keys: list[str] = field(default_factory=list)
     subscores: dict[str, float] = field(default_factory=dict)
     reasons: dict[str, str] = field(default_factory=dict)
+    expected: int = 5
+
+    @property
+    def coverage(self) -> Coverage:
+        return Coverage(self.valid, self.expected)
 
     def to_dict(self) -> dict:
         return {
             "symbol": self.symbol,
             "score": round(self.score, 1) if self.score is not None else None,
             "valid": self.valid,
+            "coverage": self.coverage.percent,
             "alert_keys": list(self.alert_keys),
             "subscores": dict(self.subscores),
             "reasons": dict(self.reasons),
@@ -233,13 +241,14 @@ def score_index(symbol: str, closes: list[float | None]) -> IndexScore:
     verdicts = {k: fn(closes) for k, fn in TECHNICAL.items()}
     usable = {k: v for k, v in verdicts.items() if v[1] != INSUFFICIENT}
     if not usable:
-        return IndexScore(symbol=symbol, score=None, valid=0)
+        return IndexScore(symbol=symbol, score=None, valid=0, expected=len(TECHNICAL))
 
     hit = [k for k, (alert, _) in usable.items() if alert]
     return IndexScore(
         symbol=symbol,
         score=100.0 * (1.0 - len(hit) / len(usable)),
         valid=len(usable),
+        expected=len(TECHNICAL),
         alert_keys=hit,
         subscores={k: 0.0 if alert else 1.0 for k, (alert, _) in usable.items()},
         reasons={k: why for k, (_, why) in usable.items()},
