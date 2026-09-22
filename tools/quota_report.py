@@ -31,6 +31,8 @@ SYMBOL_ALERT = 200
 RAW_FILE_ALERT = 750
 GIT_OBJECT_ALERT = 100_000
 GIT_BYTES_ALERT = 500 * MB
+SHIOAJI_LIMIT = 500 * MB
+SHIOAJI_REMAINING_ALERT = 100 * MB
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,36 @@ def _repo_size(repo: Path) -> tuple[int, int]:
     return _dir_size(repo, skip_ignored=True), _dir_size(git) if git.exists() else 0
 
 
+def latest_shioaji_remaining(runs) -> int | None:
+    """run log 裡最近一次記到的 `remaining_bytes`。抓不到回 `None`，**不是 0**。
+
+    ⚠️ 實際寫進 run log 的是巢狀的 `quota.shioaji_usage.remaining_bytes`
+    （`tools/crosscheck_tw.py` 的 `log.quota.setdefault("shioaji_usage", usage)`）；
+    這張表本來讀平的 `quota.shioaji_remaining_bytes`，那個 key **從來沒有人寫過**，
+    所以天天都印「沒有記到」（回補批 R-5）。兩種都讀，舊格式不會因此看不見。
+    """
+    found: int | None = None
+    for run in runs:
+        quota = run.get("quota")
+        if not isinstance(quota, dict):
+            continue
+        usage = quota.get("shioaji_usage")
+        value = usage.get("remaining_bytes") if isinstance(usage, dict) else None
+        if value is None:
+            value = quota.get("shioaji_remaining_bytes")
+        if isinstance(value, int):
+            found = value
+    return found
+
+
+def shioaji_alert(remaining: int | None) -> str | None:
+    """剩餘流量低於門檻才回一句話。**不知道不算告警** —— 那是上面那格的事。"""
+    if remaining is None or remaining >= SHIOAJI_REMAINING_ALERT:
+        return None
+    return (f"Shioaji 只剩 {remaining / MB:.1f} MB，低於 {SHIOAJI_REMAINING_ALERT / MB:.0f} MB "
+            "監控門檻（08:00 重置前不要再排重抓）")
+
+
 def main() -> int:
     print("=== Day 28 第 5 項：額度盤點 ===")
     ym = dt.date.today().strftime("%Y-%m")
@@ -130,20 +162,17 @@ def main() -> int:
         print("  （run log 裡沒有 quota.requests —— 舊格式的那幾筆）")
 
     # ---- Shioaji 剩餘流量 ----
-    remaining = [
-        r["quota"].get("shioaji_remaining_bytes")
-        for r in runs
-        if isinstance(r.get("quota"), dict)
-        and r["quota"].get("shioaji_remaining_bytes") is not None
-    ]
+    latest = latest_shioaji_remaining(runs)
     print("\n--- Shioaji 日流量（上限 500MB，08:00 重置） ---")
-    if remaining:
-        latest = remaining[-1]
-        print(f"  最近一次記到的 remaining_bytes：{latest:,}"
-              f"（約 {latest / MB:.1f} MB，用掉約 {500 - latest / MB:.1f} MB）")
-    else:
-        print("  本月的 run log 沒有記到 remaining_bytes")
+    if latest is None:
+        print("  未取得 —— 本月的 run log 裡沒有任何一筆 usage")
         print("  ！這格空著就等於不知道離上限多遠 —— 超流量會回空值不會報錯（§6）")
+    else:
+        print(f"  最近一次記到的 remaining_bytes：{latest:,}"
+              f"（約 {latest / MB:.1f} MB，用掉約 {SHIOAJI_LIMIT / MB - latest / MB:.1f} MB）")
+        alert = shioaji_alert(latest)
+        if alert:
+            print(f"  ！{alert}")
 
     # ---- repo 與資料層體積 ----
     print("\n--- 體積 ---")
