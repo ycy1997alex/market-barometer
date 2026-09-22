@@ -54,6 +54,8 @@
 
 新表皆有資料日期（`date` 或 `data_date`）與抓取時間 `as_of`。`tw_stock_monthly` 額外以 `period` 表示營收所屬月份。`score_history` 新增 `comparable`、`native`、`strength` 三個實欄位與索引，可直接排序；舊分數列三欄為 `NULL`。2026-09-20 已先用 SQLite online backup 建立 `%STOCKDATA_ROOT%\market_pre_schema_20260920.db`，再升級實際資料庫；逐表以升級前的欄位比對筆數與 SHA-256 指紋，七張舊表的 5,672 列均保持相同。
 
+**`adjustment_event` 是 0 列，這是對的、不是壞掉。** 這張表只在「整段固定倍數 + 證交所公告核對得上」時才寫一列（`pipeline/fetch_prices.py`）。正式庫的 `price_daily` 最早只到 2025-09-04，0050 那次 4:1 分割在 2025-06-18 —— 事件落在價格史起點之前，這條路從來沒有機會跑到。**空表代表期間內沒有分割事件，不代表偵測沒在運作**；要看它真的會動，跑 `tests/pipeline/test_recheck_split_replay.py`，那一份用 2025-06 的真實收盤價（`tests/fixtures/split_0050_202506.json`）在隔離資料庫裡重放整段。⚠️ **不要為了讓這張表有資料而回填歷史價格。**
+
 ### 1.2 單位 —— 這裡最容易出事
 
 系統裡同時存在**四種**單位。它們互不換算，沒有一條「乘以 1000」可以通吃。
