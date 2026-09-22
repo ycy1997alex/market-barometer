@@ -37,3 +37,6 @@ dist/
 
 # 打包
 *.spec.bak
+
+# Shioaji 在 repo 根目錄跑起來時自己生的 log
+shioaji.log
