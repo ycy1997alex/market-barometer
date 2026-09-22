@@ -154,3 +154,166 @@ def drawdown_from_high(prices: list[Number]) -> float | None:
     if high <= 0:
         return None
     return clean[-1] / high - 1.0
+
+
+def wilder_ema(series: list[Number], period: int) -> list[float | None]:
+    """Wilder smoothing seeded with the first complete simple average."""
+    if period < 1:
+        raise ValueError("period must be positive")
+    out: list[float | None] = [None] * len(series)
+    previous: float | None = None
+    for i, value in enumerate(series):
+        if previous is None:
+            window = _window(series, i, period)
+            if window is not None:
+                previous = sum(window) / period
+        elif value is None or not math.isfinite(float(value)):
+            previous = None
+        else:
+            previous = (previous * (period - 1) + float(value)) / period
+        out[i] = previous
+    return out
+
+
+def ema(series: list[Number], period: int) -> list[float | None]:
+    """Standard span EMA; return warmup as missing while retaining its state."""
+    if period < 1:
+        raise ValueError("period must be positive")
+    alpha = 2 / (period + 1)
+    out: list[float | None] = []
+    previous: float | None = None
+    run = 0
+    for value in series:
+        if value is None or not math.isfinite(float(value)):
+            previous, run = None, 0
+            out.append(None)
+            continue
+        previous = float(value) if previous is None else alpha * float(value) + (1 - alpha) * previous
+        run += 1
+        out.append(previous if run >= period else None)
+    return out
+
+
+def stochastic_kd(
+    highs: list[Number], lows: list[Number], closes: list[Number],
+    period: int = 9, smooth: int = 3,
+) -> tuple[list[float | None], list[float | None]]:
+    if not (len(highs) == len(lows) == len(closes)):
+        raise ValueError("OHLC lengths differ")
+    if period < 1 or smooth < 1:
+        raise ValueError("period and smooth must be positive")
+    k: list[float | None] = []
+    d: list[float | None] = []
+    last_k: float | None = None
+    last_d: float | None = None
+    for i, close in enumerate(closes):
+        hi = _window(highs, i, period)
+        lo = _window(lows, i, period)
+        if hi is None or lo is None or close is None or not math.isfinite(float(close)):
+            last_k = last_d = None
+            k.append(None)
+            d.append(None)
+            continue
+        highest, lowest = max(hi), min(lo)
+        rsv = 50.0 if highest == lowest else (float(close) - lowest) / (highest - lowest) * 100
+        last_k = rsv if last_k is None else (rsv + (smooth - 1) * last_k) / smooth
+        last_d = last_k if last_d is None else (last_k + (smooth - 1) * last_d) / smooth
+        k.append(last_k)
+        d.append(last_d)
+    return k, d
+
+
+def macd(closes: list[Number]) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    fast, slow = ema(closes, 12), ema(closes, 26)
+    dif = [a - b if a is not None and b is not None else None for a, b in zip(fast, slow)]
+    signal = ema(dif, 9)
+    hist = [a - b if a is not None and b is not None else None for a, b in zip(dif, signal)]
+    return dif, signal, hist
+
+
+def dmi_adx(
+    highs: list[Number], lows: list[Number], closes: list[Number], period: int = 14,
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    if not (len(highs) == len(lows) == len(closes)):
+        raise ValueError("OHLC lengths differ")
+    if period < 1:
+        raise ValueError("period must be positive")
+    n = len(closes)
+    tr: list[Number] = [None] * n
+    plus_dm: list[Number] = [None] * n
+    minus_dm: list[Number] = [None] * n
+    for i in range(1, n):
+        values = (highs[i], lows[i], closes[i - 1], highs[i - 1], lows[i - 1])
+        if any(v is None or not math.isfinite(float(v)) for v in values):
+            continue
+        high, low, previous_close, previous_high, previous_low = map(float, values)
+        up, down = high - previous_high, previous_low - low
+        tr[i] = max(high - low, abs(high - previous_close), abs(low - previous_close))
+        plus_dm[i] = up if up > down and up > 0 else 0.0
+        minus_dm[i] = down if down > up and down > 0 else 0.0
+    atr = wilder_ema(tr, period)
+    p_smooth = wilder_ema(plus_dm, period)
+    m_smooth = wilder_ema(minus_dm, period)
+    plus: list[float | None] = []
+    minus: list[float | None] = []
+    dx: list[Number] = []
+    for a, p, m in zip(atr, p_smooth, m_smooth):
+        if a is None or p is None or m is None or a <= 0:
+            plus.append(None)
+            minus.append(None)
+            dx.append(None)
+            continue
+        pdi, mdi = 100 * p / a, 100 * m / a
+        plus.append(pdi)
+        minus.append(mdi)
+        dx.append(100 * abs(pdi - mdi) / (pdi + mdi) if pdi + mdi else 0.0)
+    return plus, minus, wilder_ema(dx, period)
+
+
+def obv(closes: list[Number], volumes: list[Number]) -> list[float | None]:
+    if len(closes) != len(volumes):
+        raise ValueError("close/volume lengths differ")
+    out: list[float | None] = []
+    total = 0.0
+    for i, (close, volume) in enumerate(zip(closes, volumes)):
+        if close is None or volume is None or not all(math.isfinite(float(v)) for v in (close, volume)):
+            out.append(None)
+            continue
+        if i and closes[i - 1] is not None:
+            total += (1 if float(close) > float(closes[i - 1]) else -1 if float(close) < float(closes[i - 1]) else 0) * float(volume)
+        out.append(total)
+    return out
+
+
+def roc(closes: list[Number], period: int) -> list[float | None]:
+    if period < 1:
+        raise ValueError("period must be positive")
+    out: list[float | None] = [None] * len(closes)
+    for i in range(period, len(closes)):
+        prev, now = closes[i - period], closes[i]
+        if prev is not None and now is not None and all(math.isfinite(float(v)) for v in (prev, now)) and float(prev) != 0:
+            out[i] = (float(now) / float(prev) - 1) * 100
+    return out
+
+
+def ma_slope(series: list[Number], days: int = 20) -> float | None:
+    if days < 1:
+        raise ValueError("days must be positive")
+    if len(series) <= days or series[-1] is None or series[-1 - days] in (None, 0):
+        return None
+    now, before = float(series[-1]), float(series[-1 - days])
+    return (now / before - 1) * 100 if math.isfinite(now) and math.isfinite(before) else None
+
+
+def crossed_within(a: list[Number], b: list[Number], days: int, direction: str) -> bool:
+    if len(a) != len(b) or days < 1 or direction not in {"up", "down"}:
+        raise ValueError("invalid cross arguments")
+    for i in range(max(1, len(a) - days), len(a)):
+        prior = (a[i - 1], b[i - 1])
+        current = (a[i], b[i])
+        if any(v is None or not math.isfinite(float(v)) for v in prior + current):
+            continue
+        old, new = float(a[i - 1]) - float(b[i - 1]), float(a[i]) - float(b[i])
+        if direction == "up" and old <= 0 < new or direction == "down" and old >= 0 > new:
+            return True
+    return False
