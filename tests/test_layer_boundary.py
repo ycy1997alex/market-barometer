@@ -78,3 +78,30 @@ def test_domain_is_free_of_io():
             if mod.split(".")[0] in banned:
                 offenders.append(f"{py.relative_to(SRC)} imports {mod}")
     assert not offenders, "domain 層出現 I/O 依賴（§3.1）：\n  " + "\n  ".join(offenders)
+
+
+def test_there_is_a_domain_to_guard():
+    """守衛本身不能因為資料夾改名就安靜地變成零檔案通過。
+
+    少了這一條，把 `domain/` 改名之後上面幾條會變成「掃了 0 個檔案，全過」——
+    綠燈，而且什麼都沒守到。
+    """
+    assert _python_files("domain"), "domain/ 底下一支 .py 都沒有，上面幾條守衛等於沒在守"
+
+
+def test_domain_is_free_of_dataframe_libraries():
+    """Domain 不得依賴 pandas / numpy（§9.1 第 6 條）。
+
+    原本只有 `tests/domain/test_fifth_indicators.py` 掃 `indicators.py` 一支，
+    其餘 domain 檔沒有任何東西擋著 —— 回補批 R-1 把它擴成整個套件。
+    """
+    banned = {"pandas", "numpy"}
+    offenders: list[str] = []
+    for py in _python_files("domain"):
+        for mod in _imported_modules(py):
+            if mod.split(".")[0] in banned:
+                offenders.append(f"{py.relative_to(SRC)} imports {mod}")
+    assert not offenders, (
+        "domain 層出現 DataFrame 依賴（§9.1 第 6 條，純 Python list 版本）：\n  "
+        + "\n  ".join(offenders)
+    )
