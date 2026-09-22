@@ -27,6 +27,17 @@ ADVICE_LABELS: tuple[str, ...] = (
     "買賣建議", "建議動作",
 )
 
+# 8-9：處置描述的形容詞。§7.3 原本把這一格留成「殘留風險」——
+# 總結句的生成邏輯是純算術不會產出這些詞，但六個月後有人手改一行文案，
+# 沒有字典就沒有人擋得住。現在擋得住。
+#
+# ⚠️ 「有利」「不利」是子字串陷阱：「只有利率動了」「不利率先反應」都不是判斷。
+# 命中處後面緊跟著 `_RATE_TAIL` 的字就跳過。
+JUDGEMENT_WORDS: tuple[str, ...] = (
+    "謹慎", "留意", "有利", "不利", "偏高", "偏低", "宜觀察",
+)
+_RATE_TAIL = ("率",)
+
 # 規則陳述：「分數低於 N 應如何」
 RULE_PATTERNS: tuple[str, ...] = (
     r"分數(低|高)於\s*\d+\s*[應該宜]",
@@ -65,11 +76,18 @@ def lint(html: str) -> list[Finding]:
     """回傳所有命中。空 list = 通過。"""
     findings: list[Finding] = []
 
-    for term in ACTION_WORDS + ADVICE_LABELS:
-        kind = "action_word" if term in ACTION_WORDS else "advice_label"
+    for term in ACTION_WORDS + ADVICE_LABELS + JUDGEMENT_WORDS:
+        if term in ACTION_WORDS:
+            kind = "action_word"
+        elif term in ADVICE_LABELS:
+            kind = "advice_label"
+        else:
+            kind = "judgement_word"
         for m in re.finditer(re.escape(term), html):
             if _is_negated(html, m.start()):
                 continue
+            if kind == "judgement_word" and html[m.end():m.end() + 1] in _RATE_TAIL:
+                continue  # 「只有利率動了」不是判斷
             findings.append(
                 Finding(
                     kind=kind,

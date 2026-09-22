@@ -14,11 +14,12 @@ from __future__ import annotations
 import datetime as dt
 
 from barometer import config
-from barometer.domain import freshness, macro_spec, scoring_index, scoring_macro
+from barometer.domain import freshness, macro_spec, sampling, summary, scoring_index, scoring_macro
 from barometer.domain.coverage import Coverage
 from barometer.domain.chips import reading as chip_reading
 from barometer.pipeline import run_scores
 from barometer.pipeline.runlog import read_runs
+from barometer.render import svg
 from barometer.render.page import Row, Tab
 from barometer.storage import csv_audit
 from barometer.storage.sqlite_repo import SqliteRepo
@@ -98,6 +99,38 @@ def _macro_coverage(repo: SqliteRepo, indicators) -> Coverage:
         if reason != scoring_macro.INSUFFICIENT:
             valid += 1
     return Coverage(valid, len(indicators))
+
+
+def _macro_alerts(repo: SqliteRepo, indicators) -> tuple[dict[str, bool], dict[str, str]]:
+    """逐項警示與它們的名稱，給 8-9 的算術總結句用。算不出來的不計入分母。"""
+    alerts: dict[str, bool] = {}
+    names: dict[str, str] = {}
+    today = dt.date.today()
+    for ind in indicators:
+        cached = repo.get_macro(ind.key)
+        if cached is None or not cached.series:
+            continue
+        state = freshness.assess_source_series(
+            ind.freq, cached.data_date, today,
+            [value for _, value in cached.series], key=ind.key)
+        if not state.usable:
+            continue
+        hit, reason = scoring_macro.ALERT_FUNCS[ind.key](cached.series)
+        if reason == scoring_macro.INSUFFICIENT:
+            continue
+        alerts[ind.key] = hit
+        names[ind.key] = ind.name
+    return alerts, names
+
+
+def _score_chart(repo: SqliteRepo, scope: str, label: str) -> str:
+    """分數歷史的混合取樣折線圖（§5.3、8-10）。沒有歷史就不畫，不畫空盒子。"""
+    history = [(record.as_of.isoformat(), record.score)
+               for record in repo.get_scores(scope, "-") if record.score is not None]
+    points = sampling.mixed_sample(history, today=dt.date.today())
+    if not points:
+        return ""
+    return svg.score_chart(points, label=label)
 
 
 def _index_rows(symbols) -> list[Row]:
@@ -182,18 +215,24 @@ def build_tabs() -> list[Tab]:
         taiwan = _macro_rows(repo, macro_spec.TAIWAN)
         world_coverage = _macro_coverage(repo, macro_spec.WORLD)
         taiwan_coverage = _macro_coverage(repo, macro_spec.TAIWAN)
+        world_alerts, world_names = _macro_alerts(repo, macro_spec.WORLD)
+        taiwan_alerts, taiwan_names = _macro_alerts(repo, macro_spec.TAIWAN)
+        world_chart = _score_chart(repo, "macro_world", "世界層分數")
+        taiwan_chart = _score_chart(repo, "macro_tw", "台灣層分數")
     finally:
         repo.close()
 
     return [
         Tab(key="world", title="世界總體經濟", rows=world,
-            intro=f"{world_coverage.label('世界層')}"
+            intro=f"{summary.layer_sentence('世界層', world_alerts, world_names)}"
+                  f"｜{world_coverage.label('世界層')}"
                   f"{'｜低涵蓋・分數降級' if world_coverage.degraded else ''}｜{WORLD_INTRO}",
-            coverage=world_coverage),
+            coverage=world_coverage, chart=world_chart),
         Tab(key="tw", title="台灣總體經濟", rows=taiwan,
-            intro=f"{taiwan_coverage.label('台灣層')}"
+            intro=f"{summary.layer_sentence('台灣層', taiwan_alerts, taiwan_names)}"
+                  f"｜{taiwan_coverage.label('台灣層')}"
                   f"{'｜低涵蓋・分數降級' if taiwan_coverage.degraded else ''}｜{TW_INTRO}",
-            coverage=taiwan_coverage),
+            coverage=taiwan_coverage, chart=taiwan_chart),
         Tab(key="tw_index", title="台股大盤與 ETF",
             rows=_index_rows(config.TW_SYMBOLS), intro=INDEX_INTRO),
         Tab(key="us_index", title="美股大盤與 ETF",

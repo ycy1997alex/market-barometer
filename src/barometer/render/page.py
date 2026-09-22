@@ -63,6 +63,7 @@ class Tab:
     rows: list[Row] = field(default_factory=list)
     intro: str = ""
     coverage: Coverage | None = None
+    chart: str = ""          # 8-10：分數折線圖（inline SVG）
     sortable: bool = False
 
 
@@ -85,6 +86,13 @@ nav button{background:var(--panel);border:1px solid var(--line);color:var(--mute
 nav button[aria-selected=true]{border-color:var(--accent);color:var(--fg)}
 section[hidden]{display:none}
 .intro{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.chart{margin:0 0 14px}
+.score-chart .line{stroke:var(--accent)}
+.score-chart .line.weekly{stroke-width:1.2}
+.score-chart .line.daily{stroke-width:2.4}
+.score-chart .pt{fill:var(--accent)}
+.score-chart .divider{stroke:var(--line);stroke-dasharray:3 3}
+.score-chart .legend{fill:var(--muted);font-size:10px}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);
       vertical-align:middle}
@@ -188,6 +196,7 @@ def _row_html(r: Row) -> str:
 
 def _tab_html(t: Tab, active: bool) -> str:
     intro = f'<p class="intro">{escape(t.intro)}</p>' if t.intro else ""
+    chart = f'<div class="chart">{t.chart}</div>' if t.chart else ""
     rows = "".join(_row_html(r) for r in t.rows)
     hidden = "" if active else " hidden"
     headers = ("指標", "最新值", "走勢", "來源", "資料日期／頻率", "取得時間")
@@ -197,7 +206,7 @@ def _tab_html(t: Tab, active: bool) -> str:
     )
     return (
         f'<section data-tab="{escape(t.key)}"{hidden}>'
-        f"{intro}"
+        f"{intro}{chart}"
         f'<div class="scroll"><table{(" data-sortable=\"true\"" if t.sortable else "")}>'
         f"<thead><tr>{heading}</tr></thead>"
         f"<tbody>{rows}</tbody></table></div>"

@@ -131,3 +131,61 @@ def bar_meter(value: float, lo: float = 0.0, hi: float = 100.0) -> str:
         f'<circle class="knob" cx="{pct * 100:.1f}" cy="4" r="3"/>'
         f"</svg>"
     )
+
+
+# ---------------- 分數折線圖（8-10、§5.3） ----------------
+
+SCORE_WIDTH = 640
+SCORE_HEIGHT = 140
+
+
+def score_chart(points, width: int = SCORE_WIDTH, height: int = SCORE_HEIGHT,
+                label: str = "") -> str:
+    """分數歷史折線圖，混合取樣（`domain/sampling.mixed_sample` 的輸出）。
+
+    ⚠️ **兩段解析度要看得出來**：週頻段畫細線，近 5 個交易日的日頻段畫粗線
+    加點，中間有一條分界線，圖上還寫著兩段各是什麼。少了這個，近端的鋸齒
+    會被讀成「最近波動突然變大」—— 那是取樣密度變了，不是市場變了。
+
+    ⚠️ **缺料是斷點**：`gap_before` 的點會另起一條 `<path>`，不把兩邊接起來。
+    """
+    head = (
+        f'<svg class="score-chart" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" role="img" '
+        f'aria-label="{escape(label or "分數走勢")}" preserveAspectRatio="none">'
+    )
+    if not points:
+        return (head + f'<text class="no-data" x="{width / 2:.0f}" '
+                f'y="{height / 2:.0f}" text-anchor="middle">—</text></svg>')
+
+    values = [p.value for p in points]
+    scaled = _scale(values, width, height, PAD)
+
+    segments: list[tuple[str, list[tuple[float, float]]]] = []
+    for point, xy in zip(points, scaled):
+        if segments and not point.gap_before and segments[-1][0] == point.resolution:
+            segments[-1][1].append(xy)
+        else:
+            # 解析度換了或中間缺料 → 另起一段。接著畫就等於宣稱中間有量測。
+            if segments and not point.gap_before:
+                segments[-1][1].append(xy)   # 兩段解析度之間本身是連續的
+            segments.append((point.resolution, [xy]))
+
+    body = ""
+    for resolution, xy in segments:
+        css = "weekly" if resolution == "週" else "daily"
+        if len(xy) == 1:
+            body += f'<circle class="pt {css}" cx="{xy[0][0]:.1f}" cy="{xy[0][1]:.1f}" r="2.5"/>'
+            continue
+        path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in xy)
+        body += f'<path class="line {css}" d="{path}" fill="none"/>'
+
+    daily_start = next((i for i, p in enumerate(points) if p.resolution == "日"), None)
+    if daily_start is not None and daily_start > 0:
+        x = scaled[daily_start][0]
+        body += (f'<line class="divider" x1="{x:.1f}" y1="{PAD}" '
+                 f'x2="{x:.1f}" y2="{height - PAD}"/>')
+
+    body += (f'<text class="legend" x="{PAD}" y="{height - 2}">'
+             f'解析度：左段週頻（一年）｜右段日頻（近 5 個交易日）</text>')
+    return head + body + "</svg>"
