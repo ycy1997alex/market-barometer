@@ -63,6 +63,7 @@ class Tab:
     rows: list[Row] = field(default_factory=list)
     intro: str = ""
     coverage: Coverage | None = None
+    sortable: bool = False
 
 
 _STYLE = """
@@ -110,6 +111,32 @@ document.querySelectorAll('nav button').forEach(b=>{
       x.setAttribute('aria-selected', String(x===b)));
     document.querySelectorAll('section[data-tab]').forEach(s=>
       s.hidden = s.dataset.tab !== b.dataset.tab);
+  });
+});
+document.querySelectorAll('table[data-sortable]') .forEach(table=>{
+  const body=table.tBodies[0], original=[...body.rows];
+  let active=-1, direction=0;
+  table.querySelectorAll('thead th').forEach((head,column)=>{
+    const sort=()=>{
+      direction=active===column ? (direction===1 ? -1 : direction===-1 ? 0 : 1) : 1;
+      active=column;
+      const rows=direction===0 ? original : [...original].sort((a,b)=>{
+        const left=a.cells[column].textContent.trim();
+        const right=b.cells[column].textContent.trim();
+        const numeric=column===1;
+        const number=text=>{const match=text.match(/[+-]?\\d+(?:\\.\\d+)?/);return match?Number(match[0]):null};
+        const x=numeric?number(left):left, y=numeric?number(right):right;
+        if(x===null||x==='—')return y===null||y==='—'?0:1;
+        if(y===null||y==='—')return -1;
+        const result=numeric ? x-y : String(x).localeCompare(String(y),'zh-Hant',{numeric:true});
+        return result*direction;
+      });
+      rows.forEach(row=>body.appendChild(row));
+      table.querySelectorAll('thead th').forEach(h=>h.setAttribute('aria-sort','none'));
+      head.setAttribute('aria-sort',direction===1?'ascending':direction===-1?'descending':'none');
+    };
+    head.addEventListener('click',sort);
+    head.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();sort()}});
   });
 });
 """
@@ -163,12 +190,16 @@ def _tab_html(t: Tab, active: bool) -> str:
     intro = f'<p class="intro">{escape(t.intro)}</p>' if t.intro else ""
     rows = "".join(_row_html(r) for r in t.rows)
     hidden = "" if active else " hidden"
+    headers = ("指標", "最新值", "走勢", "來源", "資料日期／頻率", "取得時間")
+    heading = "".join(
+        f'<th{(" tabindex=\"0\" role=\"button\" aria-sort=\"none\"" if t.sortable else "")}>{title}</th>'
+        for title in headers
+    )
     return (
         f'<section data-tab="{escape(t.key)}"{hidden}>'
         f"{intro}"
-        f'<div class="scroll"><table>'
-        f"<thead><tr><th>指標</th><th>最新值</th><th>走勢</th>"
-        f"<th>來源</th><th>資料日期／頻率</th><th>取得時間</th></tr></thead>"
+        f'<div class="scroll"><table{(" data-sortable=\"true\"" if t.sortable else "")}>'
+        f"<thead><tr>{heading}</tr></thead>"
         f"<tbody>{rows}</tbody></table></div>"
         f"</section>"
     )

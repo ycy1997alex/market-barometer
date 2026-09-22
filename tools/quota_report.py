@@ -13,9 +13,11 @@ Actions 分鐘與 Pages 流量要去 GitHub 看，那兩格印出「去哪裡查
 from __future__ import annotations
 
 import datetime as dt
+import json
 import subprocess
 import sys
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parents[1]
@@ -25,6 +27,58 @@ from barometer import config  # noqa: E402
 from barometer.pipeline.runlog import read_runs  # noqa: E402
 
 MB = 1024 * 1024
+SYMBOL_ALERT = 200
+RAW_FILE_ALERT = 750
+GIT_OBJECT_ALERT = 100_000
+GIT_BYTES_ALERT = 500 * MB
+
+
+@dataclass(frozen=True)
+class Capacity:
+    symbols: int | None
+    raw_files: int | None
+    git_objects: int | None
+    git_bytes: int | None
+    alerts: tuple[str, ...]
+
+
+def _git_object_stats(repo: Path) -> tuple[int, int] | None:
+    if not (repo / ".git").exists():
+        return None
+    try:
+        result = subprocess.run(["git", "-c", f"safe.directory={repo.resolve().as_posix()}",
+                                 "-C", str(repo), "count-objects", "-v"],
+                                capture_output=True, text=True, encoding="utf-8", check=True)
+        values = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+        return (int(values["count"]) + int(values["in-pack"]),
+                (int(values["size"]) + int(values["size-pack"])) * 1024)
+    except (OSError, subprocess.CalledProcessError, KeyError, ValueError):
+        return None
+
+
+def capacity_snapshot(stock_repo: Path, root: Path, *, git_stats=_git_object_stats) -> Capacity:
+    """Count the tracked universe, raw files and loose+packed Git objects."""
+    override = root / "research_symbols.json"
+    bundled = stock_repo / "src" / "research" / "symbols.json"
+    universe = override if override.exists() else bundled
+    try:
+        symbols = len(json.loads(universe.read_text(encoding="utf-8"))["symbols"])
+    except (OSError, ValueError, KeyError, TypeError):
+        symbols = None
+    raw = root / "price_raw"
+    raw_files = sum(path.is_file() for path in raw.rglob("*")) if raw.exists() else None
+    git = git_stats(stock_repo)
+    objects, git_bytes = git if git is not None else (None, None)
+    alerts = []
+    if symbols is not None and symbols >= SYMBOL_ALERT:
+        alerts.append(f"標的數 {symbols} 達 {SYMBOL_ALERT} 檔監控門檻")
+    if raw_files is not None and raw_files > RAW_FILE_ALERT:
+        alerts.append(f"price_raw 檔案 {raw_files} 超過 {RAW_FILE_ALERT} 檔監控門檻")
+    if objects is not None and objects >= GIT_OBJECT_ALERT:
+        alerts.append(f"git 物件 {objects} 達 {GIT_OBJECT_ALERT} 個監控門檻")
+    if git_bytes is not None and git_bytes >= GIT_BYTES_ALERT:
+        alerts.append(f"git 物件體積 {git_bytes / MB:.1f} MB 達 {GIT_BYTES_ALERT / MB:.0f} MB 監控門檻")
+    return Capacity(symbols, raw_files, objects, git_bytes, tuple(alerts))
 
 
 # 這幾個目錄被 .gitignore 擋著，算進「repo 體積」會嚴重誤導 ——
@@ -102,6 +156,22 @@ def main() -> int:
     root = config.stockdata_root()
     print(f"  {'_stockdata':<18}{_dir_size(root) / MB:>7.2f} MB"
           f"（不在任何 repo 內 —— 這一塊永遠不會撐大 git）")
+
+    capacity = capacity_snapshot(_HERE.parent / "stock-research", root)
+    print("\n--- 大 N 容量監控（研究站） ---")
+    for label, value in (("標的數", capacity.symbols),
+                         ("price_raw 檔案數", capacity.raw_files),
+                         ("git 物件總量", capacity.git_objects)):
+        print(f"  {label}：{value if value is not None else '資料不足'}")
+    print(f"  git 物件體積：{capacity.git_bytes / MB:.2f} MB"
+          if capacity.git_bytes is not None else "  git 物件體積：資料不足")
+    for alert in capacity.alerts:
+        print(f"  告警：{alert}")
+    if not capacity.alerts and None in (capacity.symbols, capacity.raw_files,
+                                        capacity.git_objects, capacity.git_bytes):
+        print("  部分資料不足，無法確認是否達監控門檻")
+    elif not capacity.alerts:
+        print("  未達監控門檻")
 
     # ---- docs/ 的成長率：Pages 每次部署的實際大小 ----
     print("\n--- GitHub Pages ---")
