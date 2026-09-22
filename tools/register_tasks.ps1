@@ -22,6 +22,7 @@ $Tools = Join-Path $RepoRoot "tools"
 #   18:05 籌碼 —— 三大法人 T86 約 17:30 公布
 #   18:30 台股交叉比對 —— 台股收盤與 T86 落地後，發布之前
 #   21:45 籌碼補班 —— 融資融券約 21:30 才公布，18:00 那班根本不去問它
+#   21:48 逐格比對 —— 發布前照一次昨今差異；只出報告，不擋發布
 #   21:50 發布 —— 排在最後：當天的資料全部落地了才產頁面，一天只 push 一次
 $Tasks = @(
     @{ Name = "Barometer-Daily-US";      At = "09:00"; Script = "run_daily.ps1";         Extra = @("-Market", "us");         Desc = "market-barometer daily us fetch" },
@@ -30,6 +31,7 @@ $Tasks = @(
     @{ Name = "Barometer-Chips-TW";      At = "18:05"; Script = "run_daily.ps1";         Extra = @("-Market", "chips");      Desc = "market-barometer tw chips (T86 + futures)" },
     @{ Name = "Barometer-Crosscheck-TW"; At = "18:30"; Script = "crosscheck_tw.ps1";      Extra = @();                        Desc = "market-barometer Shioaji TW crosscheck" },
     @{ Name = "Barometer-Chips-TW-Late"; At = "21:45"; Script = "run_daily.ps1";         Extra = @("-Market", "chips-late"); Desc = "market-barometer tw margin trading (late)" },
+    @{ Name = "Barometer-Verify-Content"; At = "21:48"; Script = "verify_content.ps1";  Extra = @();                        Desc = "market-barometer day-over-day content review" },
     @{ Name = "Barometer-Publish";       At = "21:50"; Script = "publish_and_push.ps1";  Extra = @();                        Desc = "market-barometer publish + push docs/" }
 )
 
