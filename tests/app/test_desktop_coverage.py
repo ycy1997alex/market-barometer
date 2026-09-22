@@ -23,7 +23,7 @@ def test_status_shows_macro_layer_coverage_separately():
                    fetched_at=dt.datetime(2026, 9, 18, 18), data_date=today,
                    source="yfinance")
     status = DashboardPresenter(repo, today=today).status()
-    assert "世界層 1/11 項" in status
+    assert "世界層 1/25 項" in status   # 第八批 8-1~8-8 之後世界層是 25 項
     assert "台灣層 0/6 項" in status
     assert "低涵蓋" in status
     assert status.index("低涵蓋") < status.index("資料日期")

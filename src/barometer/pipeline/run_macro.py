@@ -14,9 +14,10 @@ import datetime as dt
 import sys
 
 from barometer import config
-from barometer.datasources import eia_src, fred_src, tw_gov_src, yfinance_src
+from barometer.datasources import (
+    cboe_src, cftc_src, eia_src, fred_src, tw_gov_src, yfinance_src)
 from barometer.datasources.base import COUNTER, FetchError
-from barometer.domain import freshness
+from barometer.domain import breadth, freshness, futures
 from barometer.domain.coverage import Coverage
 from barometer.domain.macro_spec import ALL, SCORED, WORLD, TAIWAN
 from barometer.domain.ports import MacroSeries
@@ -25,6 +26,121 @@ from barometer.pipeline.runlog import RunLog
 from barometer.storage.sqlite_repo import SqliteRepo
 
 YF_PERIOD = "6mo"  # 近 6 個月日線收盤（§7.3）
+
+
+# 8-1：WALCL 的單位是百萬美元，RRPONTSYD 是十億美元 —— 差一千倍。
+# 直接相減不會報錯，只會得到一個看起來很正常的錯數字。
+WALCL_MILLIONS_PER_BILLION = 1000.0
+
+
+# 8-2：11 檔 SPDR 類股 ETF。廣度與它的分母共用同一次抓取。
+SECTOR_ETFS = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK",
+               "XLP", "XLRE", "XLU", "XLV", "XLY")
+BREADTH_PERIOD = "2y"      # 200MA 加上 30 天的歷史
+BREADTH_DAYS = 30
+_SECTOR_CACHE: dict[dt.date, dict[str, list[tuple[str, float]]]] = {}
+
+
+def sector_closes(today: dt.date) -> dict[str, list[tuple[str, float]]]:
+    """同一天只抓一次（§2.6）。抓失敗的那幾檔直接缺席，由分母反映。"""
+    if today in _SECTOR_CACHE:
+        return _SECTOR_CACHE[today]
+    closes: dict[str, list[tuple[str, float]]] = {}
+    for symbol in SECTOR_ETFS:
+        try:
+            bars = yfinance_src.fetch_daily(symbol, period=BREADTH_PERIOD)
+        except Exception:  # noqa: BLE001 — 缺一檔就少一檔分母，不擋整項
+            continue
+        rows = [(b.date.isoformat(), b.close) for b in bars if b.close is not None]
+        if rows:
+            closes[symbol] = rows
+    if not closes:
+        raise FetchError("11 檔類股 ETF 一檔都沒抓到")
+    _SECTOR_CACHE[today] = closes
+    return closes
+
+
+def curve_spread_series(near: list[tuple[str, float]],
+                        far: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """遠月相對近月的價差百分比，只取兩邊都有的交易日。"""
+    deferred = dict(far)
+    out: list[tuple[str, float]] = []
+    for label, front in sorted(near):
+        back = deferred.get(label)
+        if front in (None, 0) or back is None:
+            continue
+        out.append((label, (back / front - 1.0) * 100.0))
+    return out
+
+
+def ratio_series(numerator: list[tuple[str, float]],
+                 denominator: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """兩條日頻序列相除，只留兩邊都有的交易日。
+
+    ⚠️ 分母缺料或為 0 的那一天**整天不算** —— 不補舊值、不回 0。少一天看得出來，
+    一個用昨天油價湊出來的金油比看不出來。
+    """
+    bottom = dict(denominator)
+    out: list[tuple[str, float]] = []
+    for label, top in sorted(numerator):
+        low = bottom.get(label)
+        if top is None or low in (None, 0):
+            continue
+        out.append((label, top / low))
+    return out
+
+
+def policy_path_series(quotes: list[tuple[str, float]],
+                       target: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """隱含利率（`100 − 報價`）減現行上限，單位是百分點。
+
+    `DFEDTARU` 是階梯狀的政策值，不是日資料 —— 所以每個期貨交易日配的是
+    「那天或那天之前最後一次公布的上限」。**上限還沒出現過的日子直接丟掉**，
+    不往後借一個未來才存在的數字（§7.2 的同一條原則）。
+    """
+    steps = sorted(target)
+    out: list[tuple[str, float]] = []
+    for label, quote in sorted(quotes):
+        standing = [value for day, value in steps if day <= label]
+        if not standing or quote is None:
+            continue
+        out.append((label, (100.0 - quote) - standing[-1]))
+    return out
+
+
+def vix_term_series(vix: list[tuple[str, float]],
+                    vix3m: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """近月 ÷ 三個月，只取兩邊都有的那些交易日。
+
+    對不上的日子直接不算 —— 拿前一天的三個月去配今天的近月，等於自己造一個
+    沒有發生過的期限結構。分母 0 也一樣丟掉，不做除法。
+    """
+    three_month = dict(vix3m)
+    out: list[tuple[str, float]] = []
+    for label, near in sorted(vix):
+        far = three_month.get(label)
+        if far is None or far == 0 or near is None:
+            continue
+        out.append((label, near / far))
+    return out
+
+
+def net_liquidity_series(walcl: list[tuple[str, float]],
+                         rrp: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """`WALCL − RRPONTSYD`，兩邊都換算成十億美元。
+
+    WALCL 是每週三一筆、RRP 是每個營業日一筆，所以對齊方式是「取該日或該日之前
+    最近的一筆 RRP」。**前面沒有任何一筆 RRP 的那幾列直接丟掉，不往後借、不補 0**
+    —— 補 0 會讓淨流動性憑空多出一塊。
+    """
+    rrp_sorted = sorted(rrp)
+    out: list[tuple[str, float]] = []
+    for label, millions in walcl:
+        earlier = [value for day, value in rrp_sorted if day <= label]
+        if not earlier:
+            continue
+        out.append((label, round(millions / WALCL_MILLIONS_PER_BILLION - earlier[-1], 6)))
+    return out
 
 
 def _fetch_one(ind) -> list[tuple[str, float]]:
@@ -39,6 +155,52 @@ def _fetch_one(ind) -> list[tuple[str, float]]:
         return out
     if ind.source == "fred":
         return fred_src.fetch(ind.sid)
+    if ind.source == "yfinance_breadth":
+        ratio, cover = breadth.breadth_series(
+            sector_closes(dt.date.today()), days=BREADTH_DAYS)
+        series = ratio if ind.sid.endswith("_BREADTH") else cover
+        if not series:
+            raise FetchError(f"{ind.sid}: 沒有任何一天湊得出 200 根收盤")
+        return series
+    if ind.source == "cftc":
+        return cftc_src.fetch_net_positions(cftc_src.MARKETS[ind.sid])
+    if ind.source == "curve_derived":
+        near = yfinance_src.fetch_daily("CL=F", period=YF_PERIOD)
+        far = yfinance_src.fetch_daily(
+            futures.deferred_crude_symbol(dt.date.today()), period=YF_PERIOD)
+        series = curve_spread_series(
+            [(b.date.isoformat(), b.close) for b in near if b.close is not None],
+            [(b.date.isoformat(), b.close) for b in far if b.close is not None])
+        if not series:
+            raise FetchError(f"{ind.sid}: 近月與遠月沒有任何共同交易日")
+        return series
+    if ind.source == "ratio_derived":
+        left, right = ind.sid.split("-", 1)
+        def closes(symbol: str) -> list[tuple[str, float]]:
+            bars = yfinance_src.fetch_daily(f"{symbol}=F", period=YF_PERIOD)
+            return [(b.date.isoformat(), b.close) for b in bars if b.close is not None]
+        series = ratio_series(closes(left), closes(right))
+        if not series:
+            raise FetchError(f"{ind.sid}: 分子分母沒有任何共同交易日")
+        return series
+    if ind.source == "policy_derived":
+        left, right = ind.sid.split("-", 1)
+        bars = yfinance_src.fetch_daily(f"{left}=F", period=YF_PERIOD)
+        quotes = [(b.date.isoformat(), b.close) for b in bars if b.close is not None]
+        series = policy_path_series(quotes, fred_src.fetch(right))
+        if not series:
+            raise FetchError(f"{ind.sid}: 沒有任何一天同時有期貨報價與已公布的上限")
+        return series
+    if ind.source == "cboe_derived":
+        bars = yfinance_src.fetch_daily("^VIX", period=YF_PERIOD)
+        vix = [(b.date.isoformat(), b.close) for b in bars if b.close is not None]
+        series = vix_term_series(vix, cboe_src.fetch_vix3m())
+        if not series:
+            raise FetchError("VIX 與 VIX3M 沒有任何共同交易日")
+        return series
+    if ind.source == "fred_derived":
+        left, right = ind.sid.split("-", 1)
+        return net_liquidity_series(fred_src.fetch(left), fred_src.fetch(right))
     if ind.source == "ndc":
         if ind.key == "tw_light":
             return tw_gov_src.fetch_tw_light()

@@ -63,13 +63,18 @@ def alert_dxy(s: Series) -> Verdict:
     return hit, f"5 日變動 {d:+.2f}%（門檻 ±2%）"
 
 
+# 8-12：原本寫死在函式裡的 0.20。校準要改的就是這個數字，
+# 所以它得有名字 —— 實證結果見 Reports/Alert_Threshold_Calibration。
+US10Y_MOVE_PP = 0.25   # 8-12 校準：±0.20 是 18.4 次/年（偏多），±0.25 是 8.6 次/年
+
+
 def alert_us10y(s: Series) -> Verdict:
     v = _need(s, 6)
     if not v:
         return False, INSUFFICIENT
     d = v[-1] - v[-6]
-    hit = abs(d) > 0.20
-    return hit, f"週變動 {d:+.2f} 個百分點（門檻 ±0.20）"
+    hit = abs(d) > US10Y_MOVE_PP
+    return hit, f"週變動 {d:+.2f} 個百分點（門檻 ±{US10Y_MOVE_PP:.2f}）"
 
 
 def alert_t10y2y(s: Series) -> Verdict:
@@ -277,6 +282,230 @@ def alert_crude_stocks_series(s: Series) -> Verdict:
     return alert_crude_stocks((v[-1] / v[-2] - 1.0) * 100.0)
 
 
+# --- 8-1：信用利差與淨流動性 ---
+#
+# 兩個門檻都是工程上的起手值，不是從歷史推導出來的 —— 8-12 會拿回測的觸發頻率
+# 校準它們。寫成具名常數就是為了那時候只要改這裡。
+HY_SPREAD_RISE_PP = 1.0      # 相對近期低點擴大幾個百分點算警示
+HY_SPREAD_LOOKBACK = 20      # 近期低點的視窗（約一個月的交易日）
+LIQUIDITY_DROP_PCT = 1.0     # 四週淨流動性收縮幾 % 算警示
+LIQUIDITY_WEEKS = 4
+
+
+def alert_credit_spread(s: Series) -> Verdict:
+    """高收益債信用利差：相對近期低點的擴大幅度。
+
+    **只有擴大算警示。** 利差收斂是風險偏好回來，把它記成不尋常，這條序列
+    在多頭時會一直亮燈 —— 同 `alert_claims` 的理由。
+
+    看的是升幅不是水位：利差本身的絕對水準隨信用週期而移動，而「股市還在撐、
+    信用市場先報警」講的就是那個轉折。
+    """
+    v = _need(s, HY_SPREAD_LOOKBACK)
+    if not v:
+        return False, INSUFFICIENT
+    low = min(v[-HY_SPREAD_LOOKBACK:])
+    rise = v[-1] - low
+    if rise >= HY_SPREAD_RISE_PP:
+        return True, (f"利差 {v[-1]:.2f}%，較近期低點 {low:.2f}% 擴大 {rise:.2f} 個百分點"
+                      f"（門檻 {HY_SPREAD_RISE_PP:.2f}）")
+    return False, (f"利差 {v[-1]:.2f}%，較近期低點 {low:.2f}% 變動 "
+                   f"{rise:+.2f} 個百分點")
+
+
+def alert_net_liquidity(s: Series) -> Verdict:
+    """Fed 淨流動性 `WALCL − RRPONTSYD`：看四週**變化方向**，不看水位。
+
+    ⚠️ **基期為 0 一律視為缺料。** `RRPONTSYD` 在 2013 年以前長期為 0，
+    照著算變化率會得到 `inf`，壓進分數之後變成一個看起來很嚴重、其實不存在的
+    「流動性極差」訊號。缺料就說缺料。
+    """
+    v = _need(s, LIQUIDITY_WEEKS + 1)
+    if not v:
+        return False, INSUFFICIENT
+    base = v[-1 - LIQUIDITY_WEEKS]
+    if base == 0:
+        return False, INSUFFICIENT
+    change = (v[-1] / base - 1.0) * 100.0
+    if change < -LIQUIDITY_DROP_PCT:
+        return True, (f"淨流動性四週變動 {change:+.2f}%，收縮"
+                      f"（門檻 −{LIQUIDITY_DROP_PCT:.1f}%）")
+    return False, f"淨流動性四週變動 {change:+.2f}%（門檻 −{LIQUIDITY_DROP_PCT:.1f}%）"
+
+
+# 8-2：市場廣度。半數以下站上 200MA = 只剩少數類股在撐。
+# 同樣是起手值，8-12 會用觸發頻率校準。
+BREADTH_WEAK_PCT = 50.0
+
+
+def alert_breadth_us(s: Series) -> Verdict:
+    """類股 ETF 站上 200MA 的比例。
+
+    ⚠️ **這是代理指標，不是真的漲跌家數。** 文字裡必須講出來，不然讀的人會
+    以為看到的是 advance/decline。分母（當日有料的檔數）是另一條 OBSERVE 序列。
+    """
+    v = _need(s, 1)
+    if not v:
+        return False, INSUFFICIENT
+    x = v[-1]
+    tail = (f"（代理指標，不是漲跌家數；分母見「市場廣度分母」，"
+            f"門檻 {BREADTH_WEAK_PCT:.0f}%）")
+    if x < BREADTH_WEAK_PCT:
+        return True, f"類股 ETF 站上 200MA 比例 {x:.0f}%{tail}"
+    return False, f"類股 ETF 站上 200MA 比例 {x:.0f}%{tail}"
+
+
+def alert_vix_term(s: Series) -> Verdict:
+    """VIX 期限結構：近月 ÷ 三個月。
+
+    比值 > 1 就是 backwardation —— 市場在為眼前的事定價，而不是為未來三個月。
+    ⚠️ **水位高不等於在惡化**：VIX 30 但期限結構正常，跟 VIX 20 但倒掛，
+    講的是兩件不同的事，所以這一項刻意不看 VIX 自己的水位（那是 `vix` 那一項）。
+    """
+    v = _need(s, 1)
+    if not v:
+        return False, INSUFFICIENT
+    x = v[-1]
+    if x > 1.0:
+        return True, f"VIX/VIX3M {x:.3f} > 1，近月比三個月貴（backwardation）"
+    return False, f"VIX/VIX3M {x:.3f}（1 以下為正常期限結構）"
+
+
+# 8-4：市場定價與現行上限差一碼以上，算政策路徑與現況背離。
+POLICY_GAP_PP = 0.25
+
+
+def alert_policy_path(s: Series) -> Verdict:
+    """Fed Funds 期貨隱含利率與現行上限的差距（百分點）。
+
+    ⚠️ **這是「市場定價的政策路徑」。** 期貨報價給的是一個價格，把它翻譯成
+    某某機率等於憑空多出一個沒有算過的分布 —— 那種措辭在這一項是紅線，
+    不是文案偏好（§7.1）。`test_eighth_policy_path.py` 用 AST 守著。
+    """
+    v = _need(s, 1)
+    if not v:
+        return False, INSUFFICIENT
+    gap = v[-1]
+    direction = "低於" if gap < 0 else "高於"
+    body = (f"市場定價的政策路徑{direction}現行上限 {abs(gap):.2f} 個百分點"
+            f"（門檻 {POLICY_GAP_PP:.2f}）")
+    return abs(gap) >= POLICY_GAP_PP, body
+
+
+# 8-5／8-7：兩項都是 20 個交易日的變化量。起手值，8-12 校準。
+METAL_WINDOW = 20
+METAL_FALL_PCT = 8.0        # 工業金屬需求的跌幅門檻
+GOLD_OIL_RISE_PCT = 20.0    # 金油比的漲幅門檻
+
+
+def alert_copper(s: Series) -> Verdict:
+    """工業金屬需求：20 個交易日的變化。
+
+    ⚠️ **文字不出現商品名稱或代碼。** 這一頁有分數，寫「銅走弱」會被讀成
+    這個系統對那個商品有看法；它沒有，它只是拿它當需求的讀數（§7.1）。
+
+    **只有下跌算警示。** 需求走弱是這一項要抓的東西；急漲多半是供給面的事，
+    那不是這條序列說得清楚的。
+    """
+    v = _need(s, METAL_WINDOW + 1)
+    if not v:
+        return False, INSUFFICIENT
+    change = _pct_move(v, METAL_WINDOW)
+    if change < -METAL_FALL_PCT:
+        return True, (f"工業金屬需求 20 日變動 {change:+.1f}%"
+                      f"（門檻 −{METAL_FALL_PCT:.0f}%）")
+    return False, f"工業金屬需求 20 日變動 {change:+.1f}%（門檻 −{METAL_FALL_PCT:.0f}%）"
+
+
+def alert_gold_oil(s: Series) -> Verdict:
+    """金油比：20 個交易日的變化。
+
+    比值本身沒有一個「正常水位」可以比 —— 它隨著兩邊各自的供需長期漂移。
+    會說話的是變化：急升代表資金往避險端跑。
+
+    ⚠️ 分母缺料時這條序列**根本不會有那一天**（見 `ratio_series`），
+    所以這裡拿到的一定是兩邊都有的日子；算不出來就回 `INSUFFICIENT`，
+    不回 0、不拿舊值。
+    """
+    v = _need(s, METAL_WINDOW + 1)
+    if not v:
+        return False, INSUFFICIENT
+    change = _pct_move(v, METAL_WINDOW)
+    if change > GOLD_OIL_RISE_PCT:
+        return True, (f"金油比 20 日變動 {change:+.1f}%，資金往避險端"
+                      f"（門檻 +{GOLD_OIL_RISE_PCT:.0f}%）")
+    return False, f"金油比 20 日變動 {change:+.1f}%（門檻 +{GOLD_OIL_RISE_PCT:.0f}%）"
+
+
+# 8-6：近月與 +6 個月的價差水位。兩端都算不尋常，對稱映射。
+OIL_CURVE_PCT = 8.0
+
+
+def alert_oil_curve(s: Series) -> Verdict:
+    """原油近遠月價差（遠月相對近月的百分比）。
+
+    判定用的是**絕對價差水位**，不是它的變化：曲線形狀本身就是供需的讀數。
+    負值是 backwardation（現貨比遠月貴，供給緊），正值是 contango。
+    兩端都算不尋常，方向的解讀留給讀的人。
+    """
+    v = _need(s, 1)
+    if not v:
+        return False, INSUFFICIENT
+    x = v[-1]
+    tail = f"（門檻 ±{OIL_CURVE_PCT:.0f}%／6 個月）"
+    if x < -OIL_CURVE_PCT:
+        return True, f"遠月較近月低 {abs(x):.1f}%，backwardation{tail}"
+    if x > OIL_CURVE_PCT:
+        return True, f"遠月較近月高 {x:.1f}%，contango{tail}"
+    return False, f"遠月較近月 {x:+.1f}%{tail}"
+
+
+# 8-8：各國總經。⚠️ 只進總經層，不對任何國家的股指評分（§8）。
+FX_MOVE_PCT = 2.5            # 8-12 校準：±2.0% 是 JPY 16.4／KRW 14.4 次/年，±2.5% 是 8.8／8.0
+FOREIGN_POLICY_MONTHS = 12   # 政策利率「剛動過」的回看窗（月）
+
+
+def alert_exports_yoy(s: Series) -> Verdict:
+    """出口年增率：與 13 個月前相比。**轉負算警示。**
+
+    出口是外需的直接讀數，對日韓這種外需導向的經濟體尤其如此。
+    ⚠️ 基期為 0 視為缺料 —— 同 8-1 的理由，除以 0 得到的不是「成長無限大」。
+    """
+    v = _need(s, 13)
+    if not v:
+        return False, INSUFFICIENT
+    base = v[-13]
+    if base == 0:
+        return False, INSUFFICIENT
+    yoy = (v[-1] / base - 1.0) * 100.0
+    if yoy < 0:
+        return True, f"出口年增率 {yoy:+.1f}%（負成長）"
+    return False, f"出口年增率 {yoy:+.1f}%"
+
+
+def alert_fx_move(s: Series) -> Verdict:
+    """匯率五日變動，**兩端都算**：急貶與急升都是不尋常。"""
+    v = _need(s, 6)
+    if not v:
+        return False, INSUFFICIENT
+    d = _pct_move(v)
+    return abs(d) > FX_MOVE_PCT, f"5 日變動 {d:+.2f}%（門檻 ±{FX_MOVE_PCT:.0f}%）"
+
+
+def alert_foreign_policy_rate(s: Series) -> Verdict:
+    """央行政策利率：近一年內動過就是政策變動注意。
+
+    跟 `alert_fedfunds` 同一個形狀，但這幾條是月頻，所以基準取的是月數不是筆數。
+    """
+    v = _need(s, 2)
+    if not v:
+        return False, INSUFFICIENT
+    window = v[-(FOREIGN_POLICY_MONTHS + 1):]
+    base = window[0]
+    hit = v[-1] != base
+    return hit, f"目前 {v[-1]:.3f}%，近 {len(window) - 1} 個月基準 {base:.3f}%"
+
+
 ALERT_FUNCS = {
     "vix": alert_vix, "dxy": alert_dxy, "us10y": alert_us10y,
     "t10y2y": alert_t10y2y, "cpi": alert_cpi, "unrate": alert_unrate,
@@ -285,6 +514,16 @@ ALERT_FUNCS = {
     "tw_export": alert_tw_export, "tw_gdp": alert_tw_gdp,
     "cbc_rate": alert_cbc_rate,
     "claims": alert_claims, "payrolls": alert_payrolls,
+    "credit_spread": alert_credit_spread, "net_liquidity": alert_net_liquidity,
+    "breadth_us": alert_breadth_us,
+    "vix_term": alert_vix_term,
+    "policy_path": alert_policy_path,
+    "copper": alert_copper, "gold_oil": alert_gold_oil,
+    "oil_curve": alert_oil_curve,
+    # 8-8：日韓各一組（出口、匯率、央行政策）。⚠️ 不對任何國家的股指評分。
+    "jp_exports": alert_exports_yoy, "kr_exports": alert_exports_yoy,
+    "usdjpy": alert_fx_move, "usdkrw": alert_fx_move,
+    "jp_policy": alert_foreign_policy_rate, "kr_policy": alert_foreign_policy_rate,
     # 原油庫存的原始判定收的是「週變化百分比」，這裡掛的是吃 Series 的包裝，
     # 讓「每個評分指標都有一筆」這條不變式成立（見 alert_crude_stocks_series）。
     "crude_stocks": alert_crude_stocks_series,

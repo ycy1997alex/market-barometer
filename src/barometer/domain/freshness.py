@@ -42,6 +42,15 @@ TOLERANCE_DAYS: dict[str, int] = {
     "每季": 200,
 }
 
+# 8-8：少數序列的公布節奏比它的「頻率」慢得多。OECD MEI 的日韓出口是月頻，
+# 但實測 2026-09-22 最新只到 2026-06（113 天）—— 用 75 天去看它會天天判成凍結，
+# 於是這一項永遠缺料。⚠️ 這張表是**逐 key 的例外**，不是把每月序列整體放寬；
+# 放寬之後仍然會過期，只是門檻改成這條序列真實的節奏。
+KEY_TOLERANCE_DAYS: dict[str, int] = {
+    "jp_exports": 150,
+    "kr_exports": 150,
+}
+
 # 「動得太頻繁」的下限：低於這個間隔就是 UNEXPECTED
 MIN_INTERVAL_DAYS: dict[str, int] = {
     "每日": 0,
@@ -77,6 +86,13 @@ class Freshness:
         return self.state not in (NO_DATA, OVERDUE, FROZEN)
 
 
+# 8-2：這一條序列是「當日算得出 200MA 的類股 ETF 有幾檔」。滿額 11 檔天天相同
+# 正是健康的樣子，不是來源死掉 —— 所以只免掉「連續六筆同值」那一條。
+# ⚠️ 日期過期（OVERDUE）照樣擋，而且這個名單只給**推算出來的計數**，
+#    不給任何一條真的來源序列。
+FLAT_LINE_EXEMPT_KEYS = frozenset({"breadth_us_cover"})
+
+
 def assess_source_series(
     freq: str,
     data_date: dt.date | None,
@@ -93,7 +109,8 @@ def assess_source_series(
     state = assess(freq, data_date, today, key=key)
     if state.state == OVERDUE:
         return Freshness(key, FROZEN, f"來源序列凍結：{state.reason}")
-    if (freq == "每日" and len(values) >= 6 and values[-1] is not None
+    if (freq == "每日" and key not in FLAT_LINE_EXEMPT_KEYS
+            and len(values) >= 6 and values[-1] is not None
             and all(value == values[-1] for value in values[-6:])):
         return Freshness(key, FROZEN, f"來源序列凍結：最後 6 筆值皆為 {values[-1]}")
     return state
@@ -127,7 +144,7 @@ def assess(
                 )
         return Freshness(key, ON_TIME, f"不定期，停在 {data_date}（{lag} 天前）")
 
-    tolerance = TOLERANCE_DAYS.get(freq, 30)
+    tolerance = KEY_TOLERANCE_DAYS.get(key, TOLERANCE_DAYS.get(freq, 30))
     min_interval = MIN_INTERVAL_DAYS.get(freq, 0)
 
     if previous_data_date is not None:

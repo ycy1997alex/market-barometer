@@ -46,7 +46,9 @@ class TestWorldAlerts:
 
     def test_us10y_moves_in_percentage_points(self):
         assert alert_us10y(series([4.0, 4, 4, 4, 4, 4.10]))[0] is False  # +0.10pp
-        assert alert_us10y(series([4.0, 4, 4, 4, 4, 4.25]))[0] is True   # +0.25pp > 0.20
+        # 8-12 校準後門檻是 ±0.25pp（原本 ±0.20 → 18.4 次/年，偏多）
+        assert alert_us10y(series([4.0, 4, 4, 4, 4, 4.25]))[0] is False  # 剛好等於門檻不算
+        assert alert_us10y(series([4.0, 4, 4, 4, 4, 4.31]))[0] is True   # +0.31pp > 0.25
 
     def test_t10y2y_inversion_is_the_alert(self):
         assert alert_t10y2y(series([0.5]))[0] is False

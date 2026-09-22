@@ -111,10 +111,15 @@ def test_the_three_are_back_in_the_world_layer():
     assert {"claims", "payrolls", "crude_stocks"} <= keys
 
 
-def test_world_layer_now_has_eleven_scored_indicators():
+def test_layer_census_is_updated_deliberately():
+    """指標數是人工對帳用的：加一項指標就要來這裡加一，不是自動跟著跑。
+
+    第八批把世界層從 11 項往上加：8-1 兩項（信用利差、淨流動性）、8-2 一項（市場廣度）、8-3 一項（VIX 期限結構）、8-4 一項（政策路徑）、8-5 與 8-7 各一項（工業金屬需求、金油比）、8-6 一項（原油曲線，不進回測）、8-8 六項（日韓出口／匯率／央行，USD/JPY 從只顯示搬進評分）、8-11 三項 COT（只顯示不評分）。
+    """
     from barometer.domain import macro_spec
-    assert len(macro_spec.WORLD) == 11
-    assert len(macro_spec.SCORED) == 17
+    assert len(macro_spec.WORLD) == 25
+    assert len(macro_spec.SCORED) == 31
+    assert len(macro_spec.OBSERVE) == 14
 
 
 def test_every_scored_indicator_has_an_alert_function():
