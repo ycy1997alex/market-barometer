@@ -15,6 +15,13 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Tools = Join-Path $RepoRoot "tools"
 
+# 排程動作不直接跑 powershell.exe —— 那樣每一班都會跳出終端機視窗搶走焦點。
+# 改由 pythonw.exe（沒有主控台）執行 run_hidden.py，它再以不開視窗的方式跑 .ps1，
+# 並把結束代碼原樣傳回。為什麼不用 -WindowStyle Hidden 等其他作法，寫在 run_hidden.py 開頭。
+$PythonW = "C:\Users\Alex\anaconda3\envs\barometer\pythonw.exe"
+$Launcher = Join-Path $Tools "run_hidden.py"
+foreach ($p in $PythonW, $Launcher) { if (-not (Test-Path $p)) { throw "missing: $p" } }
+
 # 時刻表的理由都寫在這裡，不要只留一個數字：
 #   09:00 美股 —— 美股收盤是台北清晨，早上抓到的是昨夜收盤
 #   09:05 總經 —— FRED / 國發會沒有固定時刻，跟著美股那班一起跑就好
@@ -69,8 +76,8 @@ foreach ($t in $Tasks) {
     $script = Join-Path $Tools $t.Script
     if (-not (Test-Path $script)) { throw "missing script: $script" }
 
-    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"' + $script + '"')) + $t.Extra
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($argList -join " ")
+    $argList = @(('"' + $Launcher + '"'), ('"' + $script + '"')) + $t.Extra
+    $action = New-ScheduledTaskAction -Execute $PythonW -Argument ($argList -join " ")
     $trigger = New-ScheduledTaskTrigger -Daily -At $t.At
 
     Register-ScheduledTask -TaskName $t.Name -Action $action -Trigger $trigger `
