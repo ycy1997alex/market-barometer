@@ -185,7 +185,7 @@ pytest -q
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_tasks.ps1
 ```
 
-`register_tasks.ps1` 是整份時刻表的唯一宣告處（六班：09:00 美股、09:05 總經、18:00 台股、18:05 籌碼、21:45 融資融券、21:50 發布），跑一次就在 Windows 工作排程器裡建好，換一台機器也是跑這一支。註冊前會先把現有任務匯出備份，路徑印在畫面上。
+`register_tasks.ps1` 是整份時刻表的唯一宣告處（八班：09:00 美股、09:05 總經、18:00 台股、18:05 籌碼、18:30 台股交叉比對、21:45 融資融券、21:48 逐格比對、21:50 發布），跑一次就在 Windows 工作排程器裡建好，換一台機器也是跑這一支。註冊前會先把現有任務匯出備份，路徑印在畫面上。每一班都經由 `pythonw.exe tools\run_hidden.py` 在背景執行，不會跳出終端機視窗搶走焦點；`.ps1` 的結束代碼原樣傳回給排程器。
 
 最後那一班 `Barometer-Publish` 呼叫的是 `tools/publish_and_push.ps1`：`publish.py` → 有變才 `git add -- docs` → commit → push → Actions 部署 Pages。它只動得到 `docs/` 底下那一份密文，每次都在 `%STOCKDATA_ROOT%\runlog\publish_push.log` 留一行。
 
