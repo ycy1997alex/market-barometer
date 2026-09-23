@@ -201,3 +201,19 @@ def test_due_keys_picks_only_the_ones_that_need_fetching():
     assert "t10y2y" in due       # 日頻停在 9/4
     assert "vix" not in due      # 今天剛更新
     assert "cbc_rate" in due     # 不定期，很久沒掃了
+
+
+def test_ndc_monthly_series_are_not_frozen_before_the_next_release():
+    """國發會次月 27 日左右才公布上月，9/23 最新是 7 月（標 7/1，84 天）是正常的。
+
+    2026-09-22 實測兩項被 75 天的通用門檻判成凍結，台灣層因此只剩 4/6。
+    """
+    july = D(2026, 7, 1)
+    values = [41.0] * 6
+    for key in ("tw_light", "tw_export"):
+        assert freshness.assess_source_series("每月", july, D(2026, 9, 23), values, key=key).usable, key
+        # 8 月資料 9/27 左右就該出來；拖到 10/15 還是 7 月就是真的停了
+        late = freshness.assess_source_series("每月", july, D(2026, 10, 15), values, key=key)
+        assert late.state == freshness.FROZEN, key
+    # 例外只給這兩個 key，不是把每月序列整體放寬
+    assert not freshness.assess_source_series("每月", july, D(2026, 9, 23), values, key="cpi").usable
