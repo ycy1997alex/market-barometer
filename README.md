@@ -215,7 +215,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_tasks.ps1
 | `tools/verify_publish.py` | §5.5 那十項（salt/IV 不重複、密文裡沒有密碼、明文沒有行動字眼…） |
 | `tools/full_reconcile.py` | 撰稿前全量比對，確認數字沒被回頭改過 |
 | `tools/drill_failure.py` | 打壞一個資料源：其他格照常、失敗那格說明停在哪一天、通知有送出 |
-| `tools/quota_report.py` | 各來源用量、repo 與 docs/ 體積、Shioaji 剩餘流量 |
+| `tools/quota_report.py` | 各來源用量、repo 與 docs/ 體積、Shioaji 剩餘流量、兩站上一次 Pages 部署結果（失敗時告警） |
 | `tools/refetch.py` | **手動**全序列重抓（自動修復一律不做） |
 
 ---

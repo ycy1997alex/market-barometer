@@ -9,16 +9,22 @@ r"""額度盤點（ToDo §6、§9 Day 28 第 5 項）。
 這支腳本只讀本機能算得出來的東西（run log、repo 體積、資料層體積）。
 Actions 分鐘與 Pages 流量要去 GitHub 看，那兩格印出「去哪裡查」而不是瞎猜
 一個數字 —— **算不出來就說算不出來**。
+
+唯一的例外是「上一次 Pages 部署結果」（2026-09-23）：push 成功不等於上線成功，
+這一格用未認證的 GitHub API 查（兩個站各一次）。查不到就印「未取得」，不當成功。
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import subprocess
 import sys
+import urllib.request
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 _HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_HERE / "src"))
@@ -137,6 +143,67 @@ def shioaji_alert(remaining: int | None) -> str | None:
             "監控門檻（08:00 重置前不要再排重抓）")
 
 
+PAGES_WORKFLOW = "pages.yml"
+
+
+@dataclass(frozen=True)
+class PagesRun:
+    status: str
+    conclusion: str | None
+    sha: str
+    created_at: str
+    url: str
+
+
+def _github_json(url: str) -> dict:
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "market-barometer-quota-report",
+        "Accept": "application/vnd.github+json",
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.load(resp)
+
+
+def github_slug(remote_url: str) -> str | None:
+    """`https://github.com/o/r.git` 或 `git@github.com:o/r.git` → `o/r`。"""
+    match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", remote_url.strip())
+    return match.group(1) if match else None
+
+
+def _repo_slug(repo: Path) -> str | None:
+    try:
+        result = subprocess.run(["git", "-c", f"safe.directory={repo.resolve().as_posix()}",
+                                 "-C", str(repo), "remote", "get-url", "origin"],
+                                capture_output=True, text=True, encoding="utf-8", check=True)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return github_slug(result.stdout)
+
+
+def latest_pages_run(slug: str, *, get_json=_github_json) -> PagesRun | None:
+    """Pages 工作流程最近一次的執行。查不到回 `None` —— **不是當成成功**。"""
+    url = f"https://api.github.com/repos/{slug}/actions/workflows/{PAGES_WORKFLOW}/runs?per_page=1"
+    try:
+        run = get_json(url)["workflow_runs"][0]
+        return PagesRun(run["status"], run.get("conclusion"), run["head_sha"][:7],
+                        run["created_at"], run["html_url"])
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return None
+
+
+def _taipei(iso_utc: str) -> str:
+    stamp = dt.datetime.fromisoformat(iso_utc.replace("Z", "+00:00"))
+    return stamp.astimezone(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M")
+
+
+def pages_alert(name: str, run: PagesRun | None) -> str | None:
+    """跑完卻不是 success 才回一句話。**不知道不算告警** —— 那是 main 那格的事。"""
+    if run is None or run.status != "completed" or run.conclusion == "success":
+        return None
+    return (f"{name} 上一次 Pages 部署 {run.conclusion}（{run.sha}，{_taipei(run.created_at)}）"
+            f"—— 線上仍是更早那一版；到 {run.url} 按 Re-run failed jobs")
+
+
 def main() -> int:
     print("=== Day 28 第 5 項：額度盤點 ===")
     ym = dt.date.today().strftime("%Y-%m")
@@ -210,6 +277,17 @@ def main() -> int:
         print(f"  {name:<18}docs/ {size / MB:.2f} MB"
               f"（軟上限 1 GB／站，每月 100 GB 流量）")
     print("  一天一次部署、每次不到 0.1 MB → 一年約 20 MB，離上限很遠")
+    for name in ("market-barometer", "stock-research"):
+        slug = _repo_slug(_HERE.parent / name)
+        run = latest_pages_run(slug) if slug else None
+        if run is None:
+            print(f"  {name:<18}上一次部署：未取得（連不上 GitHub API 或查無紀錄）—— 不代表成功")
+            continue
+        state = run.conclusion if run.status == "completed" else "進行中"
+        print(f"  {name:<18}上一次部署：{state}（{run.sha}，{_taipei(run.created_at)}）")
+        alert = pages_alert(name, run)
+        if alert:
+            print(f"  告警：{alert}")
 
     # ---- 查不到的就說查不到 ----
     print("\n--- 這台機器算不出來的（要去 GitHub 看） ---")
