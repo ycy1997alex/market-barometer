@@ -96,9 +96,11 @@ def test_hole_lands_in_the_run_log(isolated_root, monkeypatch):
 def test_run_log_on_disk_carries_it_too(isolated_root, monkeypatch):
     """排程跑完之後人只看得到 jsonl —— 記憶體裡的那份不算數。"""
     _fake_source(monkeypatch, {"^TWII": [15, 16, 17], "0050.TW": [15, 17]})
-    fetch_prices.run(["^TWII", "0050.TW"], task="test_tw", run_date=_d(18))
+    log = fetch_prices.run(["^TWII", "0050.TW"], task="test_tw", run_date=_d(18))
 
-    runs = [r for r in runlog.read_runs("2026-09") if r["task"] == "test_tw"]
+    # jsonl 依「實際執行的月份」分檔，不是 run_date 的月份 —— 照它寫進去的那一份讀
+    runs = [r for r in runlog.read_runs(log.started_at.strftime("%Y-%m"))
+            if r["task"] == "test_tw"]
     assert runs and runs[-1]["counts"].get("missing_sessions::0050.TW") == 1
 
 

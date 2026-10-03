@@ -89,7 +89,9 @@ def one_year_of_sessions(isolated_root):
 
 
 def test_latest_session_reaches_score_history(isolated_root, one_year_of_sessions):
-    run_scores.run(["^TWII"], task="test_scores")
+    # run_date 釘在資料的最後一天：不傳就是「今天」，資料停在 9/18，
+    # 過了新鮮度的 10 天容忍之後這條測試會被「序列凍結」擋下 —— 那是另一條防線的事。
+    run_scores.run(["^TWII"], task="test_scores", run_date=SESSIONS[-1])
 
     with SqliteRepo(config.db_path()) as repo:
         repo.init_schema()
