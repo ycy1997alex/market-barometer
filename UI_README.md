@@ -110,6 +110,7 @@ flowchart TD
 | 走勢圖 | `render/svg.py` → `sparkline()` | **頻率決定畫法**：日頻連續線、月/季頻階梯＋點 |
 | 分頁切換 | `render/page.py` 的 `_SCRIPT` | 純 JS，切 `hidden` 屬性 |
 | 行動字眼把關 | `render/lint.py` → `assert_clean()` | 命中就讓發布失敗 |
+| 外掛點（stock-research 用） | `render()` 的 `extra_style`／`extra_script`，`Tab.group`／`Tab.body` | 兩層導覽與自訂分頁內容，全部 opt-in；這一側一個都不傳，明文逐字不變（`tests/test_page_render_hooks.py` 的 golden 檔守著）。lint 照樣掃整份產出 |
 
 </details>
 

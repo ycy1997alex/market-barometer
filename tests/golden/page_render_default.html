@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>market-barometer</title><style>
+:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--fg:#e6e8ee;
+      --muted:#8b93a7;--accent:#5b8def;--warn:#e0a44c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+     font-size:14px;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:20px;margin:0 0 4px}
+.tagline{color:var(--muted);font-size:12.5px;margin:0 0 6px}
+.fetched{color:var(--muted);font-size:12px;margin:0 0 16px}
+.fetched time{color:var(--fg);font-variant-numeric:tabular-nums}
+.fetched .note{display:inline;margin-left:6px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
+nav button{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+           padding:7px 13px;border-radius:999px;font-size:13px;cursor:pointer}
+nav button[aria-selected=true]{border-color:var(--accent);color:var(--fg)}
+section[hidden]{display:none}
+.intro{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.chart{margin:0 0 14px}
+.score-chart .line{stroke:var(--accent)}
+.score-chart .line.weekly{stroke-width:1.2}
+.score-chart .line.daily{stroke-width:2.4}
+.score-chart .pt{fill:var(--accent)}
+.score-chart .divider{stroke:var(--line);stroke-dasharray:3 3}
+.score-chart .legend{fill:var(--muted);font-size:10px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);
+      vertical-align:middle}
+th{color:var(--muted);font-weight:400;font-size:12px}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.date{color:var(--muted);font-size:12px;white-space:nowrap}
+td.source,td.fetched{color:var(--muted);font-size:12px;white-space:nowrap}
+.note{color:var(--muted);font-size:11.5px;display:block;margin-top:2px}
+.coverage-low{color:var(--warn);font-weight:700;display:block}
+.spark .line{stroke:var(--accent);stroke-width:1.4;fill:none}
+.spark .pt{fill:var(--accent)}
+.spark .no-data{fill:var(--muted);font-size:11px}
+.meter .track{fill:var(--line)}.meter .fill{fill:var(--accent)}
+.meter .knob{fill:var(--fg)}
+footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);
+       color:var(--muted);font-size:11.5px;line-height:1.9}
+.scroll{overflow-x:auto}
+</style></head><body><div class="wrap"><h1>market-barometer</h1><p class="tagline">總經與大盤的本機氣壓計</p><p class="fetched">最後一次抓取：<time>2026-09-07 18:23</time><span class="note">（管線執行時間，不是各序列的資料日期）</span></p><nav><button data-tab="world" aria-selected="true">世界總體經濟</button><button data-tab="tw" aria-selected="false">台灣總體經濟</button></nav><section data-tab="world"><p class="intro">月頻與日頻混在同一頁。</p><div class="chart"><svg class="score-chart"></svg></div><div class="scroll"><table data-sortable="true"><thead><tr><th tabindex="0" role="button" aria-sort="none">指標</th><th tabindex="0" role="button" aria-sort="none">最新值</th><th tabindex="0" role="button" aria-sort="none">走勢</th><th tabindex="0" role="button" aria-sort="none">來源</th><th tabindex="0" role="button" aria-sort="none">資料日期／頻率</th><th tabindex="0" role="button" aria-sort="none">取得時間</th></tr></thead><tbody><tr><td>美國 CPI<span class="note">年增 2.9%</span></td><td class="num">330.1<span class="note">涵蓋率 3/3 項（100%）</span><span class="note">基本面：尚未接入</span><span class="note">較上月 +0.3%</span></td><td><svg class="spark" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="美國 CPI" preserveAspectRatio="none"><polyline class="line step" points="4.0,44.0 120.0,44.0 120.0,27.2 236.0,27.2 236.0,4.0" fill="none"/><circle class="pt" cx="4.0" cy="44.0" r="2"/><circle class="pt" cx="120.0" cy="27.2" r="2"/><circle class="pt" cx="236.0" cy="4.0" r="2"/></svg></td><td class="source">FRED CPIAUCSL</td><td class="date">2026-07-01<span class="note">每月</span></td><td class="fetched">2026-09-07 18:23</td></tr><tr><td>美債 10Y-2Y 利差</td><td class="num">+0.41%<span class="coverage-low">低涵蓋・降級｜技術面 1/3 項（33%）</span></td><td><svg class="spark" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="美債 10Y-2Y 利差" preserveAspectRatio="none"><polyline class="line" points="4.0,44.0 236.0,4.0" fill="none"/></svg></td><td class="source">—</td><td class="date">2026-09-05<span class="note">每日</span></td><td class="fetched">—</td></tr><tr><td>&lt;b&gt;未接入&lt;/b&gt;</td><td class="num">—</td><td></td><td class="source">—</td><td class="date">—<span class="note">每日</span></td><td class="fetched">—</td></tr></tbody></table></div></section><section data-tab="tw" hidden><div class="scroll"><table><thead><tr><th>指標</th><th>最新值</th><th>走勢</th><th>來源</th><th>資料日期／頻率</th><th>取得時間</th></tr></thead><tbody><tr><td>台灣央行重貼現率<span class="note">最近一次調整距今 898 天</span></td><td class="num">2.00%</td><td></td><td class="source">—</td><td class="date">2024-03-22<span class="note">不定期</span></td><td class="fetched">—</td></tr></tbody></table></div></section><footer><div>標頭的「最後一次抓取」是<strong>管線執行</strong>的時間，<strong>不是</strong>任何一條序列的資料日期。每一列的資料日期各自標在該列。</div><div>單次執行的觀察一律標為<strong>定性觀察</strong>，不是統計證據。</div><div>未經驗證的事實標「待確認」。</div><div><strong>本頁不構成投資建議。</strong></div></footer></div><script>
+document.querySelectorAll('nav button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('nav button').forEach(x=>
+      x.setAttribute('aria-selected', String(x===b)));
+    document.querySelectorAll('section[data-tab]').forEach(s=>
+      s.hidden = s.dataset.tab !== b.dataset.tab);
+  });
+});
+document.querySelectorAll('table[data-sortable]') .forEach(table=>{
+  const body=table.tBodies[0], original=[...body.rows];
+  let active=-1, direction=0;
+  table.querySelectorAll('thead th').forEach((head,column)=>{
+    const sort=()=>{
+      direction=active===column ? (direction===1 ? -1 : direction===-1 ? 0 : 1) : 1;
+      active=column;
+      const rows=direction===0 ? original : [...original].sort((a,b)=>{
+        const left=a.cells[column].textContent.trim();
+        const right=b.cells[column].textContent.trim();
+        const numeric=column===1;
+        const number=text=>{const match=text.match(/[+-]?\d+(?:\.\d+)?/);return match?Number(match[0]):null};
+        const x=numeric?number(left):left, y=numeric?number(right):right;
+        if(x===null||x==='—')return y===null||y==='—'?0:1;
+        if(y===null||y==='—')return -1;
+        const result=numeric ? x-y : String(x).localeCompare(String(y),'zh-Hant',{numeric:true});
+        return result*direction;
+      });
+      rows.forEach(row=>body.appendChild(row));
+      table.querySelectorAll('thead th').forEach(h=>h.setAttribute('aria-sort','none'));
+      head.setAttribute('aria-sort',direction===1?'ascending':direction===-1?'descending':'none');
+    };
+    head.addEventListener('click',sort);
+    head.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();sort()}});
+  });
+});
+</script></body></html>

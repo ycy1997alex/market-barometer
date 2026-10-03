@@ -28,6 +28,14 @@
 
 §2.1：`enforce_lint=True` 時，產出含行動字眼就讓發布失敗。
 market-barometer 一律開，stock-research 一律關 —— 同一支 render 兩種用法。
+
+---
+
+**骨架共用、內容可以外掛**（2026-10-03）：`Tab.group`（兩層導覽）、`Tab.body`
+（呼叫端畫好的分頁內容）、`extra_style`／`extra_script` 都是 opt-in。
+stock-research 的個股頁用它們換掉預設表格；標頭、抓取時間、頁尾免責、
+lint 仍然由這一支產生。market-barometer 自己一個都不傳，產出逐字不變
+（tests/test_page_render_hooks.py 的 golden 檔守著）。
 """
 from __future__ import annotations
 
@@ -65,6 +73,8 @@ class Tab:
     coverage: Coverage | None = None
     chart: str = ""          # 8-10：分數折線圖（inline SVG）
     sortable: bool = False
+    group: str = ""          # 導覽分組；任何一個 Tab 有 group，導覽就改成兩層
+    body: str = ""           # 呼叫端畫好、自己跳脫過的內容；有值時取代預設表格
 
 
 _STYLE = """
@@ -112,7 +122,7 @@ footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);
 .scroll{overflow-x:auto}
 """
 
-_SCRIPT = """
+_NAV_SCRIPT = """
 document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click',()=>{
     document.querySelectorAll('nav button').forEach(x=>
@@ -121,7 +131,8 @@ document.querySelectorAll('nav button').forEach(b=>{
       s.hidden = s.dataset.tab !== b.dataset.tab);
   });
 });
-document.querySelectorAll('table[data-sortable]') .forEach(table=>{
+"""
+_SORT_SCRIPT = """document.querySelectorAll('table[data-sortable]') .forEach(table=>{
   const body=table.tBodies[0], original=[...body.rows];
   let active=-1, direction=0;
   table.querySelectorAll('thead th').forEach((head,column)=>{
@@ -147,6 +158,47 @@ document.querySelectorAll('table[data-sortable]') .forEach(table=>{
     head.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();sort()}});
   });
 });
+"""
+_SCRIPT = _NAV_SCRIPT + _SORT_SCRIPT
+
+# 兩層導覽只在有人用 Tab.group 時才輸出 —— 平鋪版的樣式與腳本一個字都不動。
+# 平鋪版的處理器綁在所有 `nav button` 上，群組按鈕沒有 data-tab，被它綁到會把
+# 每一個分頁都藏起來，所以分組版換一支自己的處理器，不是疊上去。
+_GROUP_STYLE = """
+nav.grouped{display:block}
+nav.grouped .groups{display:flex;flex-wrap:wrap;column-gap:24px;margin-bottom:12px;
+                    border-bottom:1px solid var(--line)}
+nav.grouped .groups button{background:none;border:0;border-bottom:2px solid transparent;
+                           border-radius:0;padding:10px 2px;margin-bottom:-1px;
+                           color:var(--muted);font-size:14px;white-space:nowrap}
+nav.grouped .groups button[aria-selected=true]{color:var(--fg);font-weight:600;
+                                               border-bottom-color:var(--fg)}
+nav.grouped .subtabs{display:flex;flex-wrap:wrap;gap:6px}
+nav.grouped .subtabs[hidden]{display:none}
+"""
+
+_GROUPED_NAV_SCRIPT = """
+(()=>{
+  const nav=document.querySelector('nav.grouped');
+  const rows=[...nav.querySelectorAll('.subtabs')];
+  const show=button=>{
+    button.parentElement.querySelectorAll('button').forEach(x=>
+      x.setAttribute('aria-selected', String(x===button)));
+    document.querySelectorAll('section[data-tab]').forEach(s=>
+      s.hidden = s.dataset.tab !== button.dataset.tab);
+  };
+  nav.querySelectorAll('.groups button').forEach(g=>{
+    g.addEventListener('click',()=>{
+      nav.querySelectorAll('.groups button').forEach(x=>
+        x.setAttribute('aria-selected', String(x===g)));
+      rows.forEach(r=>r.hidden = r.dataset.group !== g.dataset.group);
+      const row=rows.find(r=>r.dataset.group===g.dataset.group);
+      show(row.querySelector('button[aria-selected=true]')||row.querySelector('button'));
+    });
+  });
+  rows.forEach(r=>r.querySelectorAll('button').forEach(b=>
+    b.addEventListener('click',()=>show(b))));
+})();
 """
 
 # 每一頁固定掛的收尾（§13）。財經題材的硬性要求。
@@ -197,8 +249,10 @@ def _row_html(r: Row) -> str:
 def _tab_html(t: Tab, active: bool) -> str:
     intro = f'<p class="intro">{escape(t.intro)}</p>' if t.intro else ""
     chart = f'<div class="chart">{t.chart}</div>' if t.chart else ""
-    rows = "".join(_row_html(r) for r in t.rows)
     hidden = "" if active else " hidden"
+    if t.body:
+        return f'<section data-tab="{escape(t.key)}"{hidden}>{intro}{chart}{t.body}</section>'
+    rows = "".join(_row_html(r) for r in t.rows)
     headers = ("指標", "最新值", "走勢", "來源", "資料日期／頻率", "取得時間")
     heading = "".join(
         f'<th{(" tabindex=\"0\" role=\"button\" aria-sort=\"none\"" if t.sortable else "")}>{title}</th>'
@@ -214,6 +268,33 @@ def _tab_html(t: Tab, active: bool) -> str:
     )
 
 
+def _grouped_nav(tabs: list[Tab]) -> str:
+    """兩層導覽：上層是群組，下層是該群組的分頁。沒寫 group 的分頁自成一組。
+
+    群組照第一次出現的順序排；第一組展開，其餘的子分頁列先藏起來。
+    每一組各自記得選到哪一頁，初始是該組的第一頁。
+    """
+    members: dict[str, list[Tab]] = {}
+    for t in tabs:
+        members.setdefault(t.group or t.title, []).append(t)
+    groups = "".join(
+        f'<button data-group="{escape(g)}" aria-selected="{str(i == 0).lower()}">'
+        f"{escape(g)}</button>"
+        for i, g in enumerate(members)
+    )
+    rows = "".join(
+        f'<div class="subtabs" data-group="{escape(g)}"{"" if i == 0 else " hidden"}>'
+        + "".join(
+            f'<button data-tab="{escape(t.key)}" aria-selected="{str(j == 0).lower()}">'
+            f"{escape(t.title)}</button>"
+            for j, t in enumerate(group_tabs)
+        )
+        + "</div>"
+        for i, (g, group_tabs) in enumerate(members.items())
+    )
+    return f'<nav class="grouped" aria-label="分頁"><div class="groups">{groups}</div>{rows}</nav>'
+
+
 def render(
     tabs: list[Tab],
     title: str,
@@ -221,18 +302,26 @@ def render(
     footer_notes: tuple[str, ...] = DEFAULT_FOOTER,
     enforce_lint: bool = False,
     last_run_at: str | None = None,
+    extra_style: str = "",
+    extra_script: str = "",
 ) -> str:
     """產出明文 HTML。
 
     `enforce_lint=True` 時掃描產出，命中 §2.1 的行動字眼就丟 OutputLintError
     讓發布失敗 —— **不是印個警告就放行**。這是輸出層擋住，不是靠自律。
+
+    `extra_style`／`extra_script` 接在共用的樣式與腳本之後，自訂分頁內容
+    （`Tab.body`）靠它們畫樣式、綁事件。lint 掃的是整份產出，自訂內容也逃不掉。
     """
-    nav = "".join(
+    grouped = any(t.group for t in tabs)
+    nav = _grouped_nav(tabs) if grouped else "<nav>" + "".join(
         f'<button data-tab="{escape(t.key)}" '
         f'aria-selected="{str(i == 0).lower()}">{escape(t.title)}</button>'
         for i, t in enumerate(tabs)
-    )
+    ) + "</nav>"
     sections = "".join(_tab_html(t, i == 0) for i, t in enumerate(tabs))
+    style = _STYLE + (_GROUP_STYLE if grouped else "") + extra_style
+    script = (_GROUPED_NAV_SCRIPT + _SORT_SCRIPT if grouped else _SCRIPT) + extra_script
 
     # 沒有執行紀錄就整行不顯示 —— 寧可不寫，也不要瞎編一個時間。
     # 註腳跟著那一行一起出現或一起消失，不解釋一個不存在的東西。
@@ -248,13 +337,13 @@ def render(
     html = (
         "<!DOCTYPE html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{escape(title)}</title><style>{_STYLE}</style></head><body>"
+        f"<title>{escape(title)}</title><style>{style}</style></head><body>"
         f'<div class="wrap"><h1>{escape(title)}</h1>'
         + (f'<p class="tagline">{escape(tagline)}</p>' if tagline else "")
         + fetched
-        + f"<nav>{nav}</nav>{sections}"
+        + f"{nav}{sections}"
         f"<footer>{footer}</footer></div>"
-        f"<script>{_SCRIPT}</script></body></html>"
+        f"<script>{script}</script></body></html>"
     )
 
     if enforce_lint:
