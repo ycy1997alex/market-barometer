@@ -29,6 +29,16 @@ REPO_OF = {
 }
 
 
+# 明文的記號。`<section data-tab="` 是共用骨架每一頁都會產生的分頁容器，密文殼裡沒有；
+# stock-research 改版後分頁內容自己畫、表格都帶 class，只找 `<table>` 會整份漏掉
+# （tests/test_verify_publish_plaintext.py）。
+PLAINTEXT_MARKERS = ("<table>", '<section data-tab="')
+
+
+def looks_like_plaintext(html: str) -> bool:
+    return any(marker in html for marker in PLAINTEXT_MARKERS)
+
+
 def _extract_envelope(sealed_html: str) -> dict:
     m = re.search(r"const ENV\s*=\s*(\{.*?\});", sealed_html, re.S)
     if not m:
@@ -90,9 +100,8 @@ def main(argv: list[str]) -> int:
     # 1. git 裡沒有任何明文版本
     hist = _git(repo, "log", "--all", "--full-history", "--oneline", "--", "docs/")
     plain_in_git = any(
-        marker in _git(repo, "show", f"{line.split()[0]}:docs/index.html")
+        looks_like_plaintext(_git(repo, "show", f"{line.split()[0]}:docs/index.html"))
         for line in hist.splitlines() if line.split()
-        for marker in ("<table>",)
     ) if hist.strip() else False
     check(not plain_in_git, "git log 裡的 docs/ 沒有任何明文版本")
 
