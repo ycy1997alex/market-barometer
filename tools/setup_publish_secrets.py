@@ -1,4 +1,4 @@
-"""建立 `STOCKDATA_ROOT\secrets\publish.json`（ToDo §5.1）。
+r"""建立 `STOCKDATA_ROOT\secrets\publish.json`（ToDo §5.1）。
 
 **憑證從命令列或既有檔案來，不寫死在這支腳本裡。** 兩個 repo 都是 public，
 密碼一旦進版控就撤不回來（§12 第 1 條）—— 所以這支腳本自己也不能認得任何
