@@ -22,9 +22,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -55,7 +55,7 @@ jobs:
           Write-Host "產出 $exe（$([math]::Round($size/1MB,1)) MB）"
           if ($size -lt 1MB) { throw "產物太小，八成是空的" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: market-barometer-windows
           path: dist/market-barometer.exe
@@ -63,7 +63,7 @@ jobs:
 
       - name: 掛上 Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/market-barometer.exe
           generate_release_notes: true

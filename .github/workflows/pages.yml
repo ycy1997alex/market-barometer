@@ -34,7 +34,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # docs/ 只該有密文與 .nojekyll。有資料檔就讓部署失敗 ——
       # 原始價格序列不進任何 repo，連加密的也不放（§1 第 7 條、§12 第 4 條）。
@@ -48,9 +48,9 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
